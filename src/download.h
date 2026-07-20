@@ -25,10 +25,10 @@ void download_start(const char *identifier, const char *item_path,
 
 /* Call every tick while a download might be in flight. On DOWNLOAD_DONE
  * this also renames .part -> final and invokes Onion's own
- * reset_list.sh (if present) on `dest_dir`, exactly like mmp_getrom did,
- * so the new rom shows up in the emulator's game list without a manual
- * rescan. `out_progress` (may be NULL) is set to [0.0, 1.0] while
- * RUNNING, based on the partial file's growing size vs `expected_size`. */
+ * reset_list.sh (if present) on `dest_dir`, so the new rom shows up in
+ * the emulator's game list without a manual rescan. `out_progress` (may
+ * be NULL) is set to [0.0, 1.0] while RUNNING, based on the partial
+ * file's growing size vs `expected_size`. */
 DownloadState download_poll(float *out_progress);
 
 /* Resets state back to IDLE — call after the caller has shown/handled a

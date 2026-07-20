@@ -94,9 +94,8 @@ DownloadState download_poll(float *out_progress) {
 
         dlog("download: complete, saved to %s", g_final_path);
 
-        /* refresh Onion's game-list cache, exactly like mmp_getrom did —
-         * easy detail to drop when porting, and without it the new rom
-         * doesn't show up until a manual rescan. */
+        /* refresh Onion's game-list cache — easy detail to drop, and
+         * without it the new rom doesn't show up until a manual rescan. */
         char resetcmd[700];
         snprintf(resetcmd, sizeof(resetcmd),
                  "if [ -f /mnt/SDCARD/.tmp_update/script/reset_list.sh ]; then "
