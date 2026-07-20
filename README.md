@@ -3,6 +3,21 @@
 Native GUI ROM downloader app for Onion OS (Miyoo Mini Plus). See
 `/Users/eren/.claude/plans/compressed-herding-twilight.md` for the full plan.
 
+## Installation
+
+1. Download `rom-downloader-<version>.zip` from the
+   [Releases](https://github.com/nullRefErr/rom-downloader/releases) page.
+2. Extract it onto your SD card's root — it contains an `App/RomDownloader/`
+   folder that merges into your existing `App/` folder (same layout Onion
+   itself uses, same approach as the original `mmp_getrom` script).
+3. Reboot the device (or rescan Apps), then launch **Rom Downloader By AEY**
+   from the Apps menu.
+4. Pick a system (currently PlayStation and Genesis — the only two
+   archive.org source collections that are alive; others are grayed out),
+   browse or press Y to search, press A on a rom to confirm and download.
+   It lands directly in `Roms/<system>/` and shows up in the emulator's
+   game list without a manual rescan.
+
 ## Status: Phase 2 in progress — LVGL emulator-select screen working on real hardware
 
 Phase 1 (packaging + SDL2 window/input/network smoke test) is done — see
