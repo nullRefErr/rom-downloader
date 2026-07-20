@@ -1,6 +1,9 @@
 # rom-downloader
 
-Native GUI ROM downloader app for Onion OS (Miyoo Mini Plus).
+A little native GUI app that brings ROM browsing and downloading straight
+onto your Onion OS handheld (Miyoo Mini Plus) — no more swapping SD cards
+just to grab one game. Pick a system, search, hit download, and it's ready
+to play by the time you back out of the menu.
 
 ## Screenshots
 
@@ -22,3 +25,12 @@ Native GUI ROM downloader app for Onion OS (Miyoo Mini Plus).
    browse or press Y to search, press A on a rom to confirm and download.
    It lands directly in `Roms/<system>/` and shows up in the emulator's
    game list without a manual rescan.
+
+## Contributing
+
+Found a bug, have an idea, or just want to poke around? Contributions are
+very welcome:
+
+- **Bugs / ideas**: open an [issue](https://github.com/nullRefErr/rom-downloader/issues) — screenshots and `log.txt`/`crash.txt` from the device help a lot.
+- **Code**: fork, branch, and open a PR. This is native C (SDL2 + LVGL) cross-compiled for the Miyoo Mini Plus — if you've got the device and Docker for the toolchain, you can build and test the whole thing yourself.
+- Small fixes, new systems, UI polish, whatever scratches your itch — all appreciated.
