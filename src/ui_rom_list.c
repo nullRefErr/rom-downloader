@@ -70,6 +70,14 @@ static lv_group_t *g_search_group;
 static lv_obj_t *g_kb;
 static uint32_t g_kb_last_sel = LV_BUTTONMATRIX_BUTTON_NONE;
 
+/* download confirmation overlay, opened on A before a download actually
+ * starts — see open_download_confirm() below */
+static bool g_confirm_close_pending;
+static bool g_confirm_close_apply;
+static lv_obj_t *g_confirm_overlay;
+static lv_group_t *g_confirm_group;
+static void start_download(void);
+
 /* The keyboard's default per-button FOCUSED/FOCUS_KEY style (driven by
  * lv_group's object-level focus state cascading down to whichever button
  * lv_buttonmatrix considers "selected") wasn't visibly rendering on-device
@@ -262,7 +270,7 @@ static void process_pending_search_close(void) {
 }
 
 void ui_rom_list_open_search(void) {
-    if (g_search_overlay) return;
+    if (g_search_overlay || g_confirm_overlay) return;
 
     g_search_overlay = lv_obj_create(lv_screen_active());
     lv_obj_set_size(g_search_overlay, LV_PCT(100), LV_PCT(100));
@@ -311,6 +319,81 @@ void ui_rom_list_search_backspace(void) {
     if (!g_search_overlay) return;
     lv_obj_t *ta = lv_obj_get_child(g_search_overlay, 0);
     lv_textarea_delete_char(ta);
+}
+
+/* Same deferred-close reasoning as the search keyboard above: don't delete
+ * the overlay from inside its own LV_EVENT_KEY handler. */
+static void confirm_key_cb(lv_event_t *e) {
+    uint32_t key = lv_event_get_key(e);
+    if (key == LV_KEY_ENTER) {
+        g_confirm_close_pending = true;
+        g_confirm_close_apply = true;
+    } else if (key == LV_KEY_ESC) {
+        g_confirm_close_pending = true;
+        g_confirm_close_apply = false;
+    }
+}
+
+static void process_pending_confirm_close(void) {
+    if (!g_confirm_close_pending) return;
+    g_confirm_close_pending = false;
+    bool apply = g_confirm_close_apply;
+
+    lvgl_glue_set_active_group(g_group);
+    if (g_confirm_overlay) {
+        lv_obj_delete(g_confirm_overlay);
+        g_confirm_overlay = NULL;
+    }
+    if (g_confirm_group) {
+        lv_group_delete(g_confirm_group);
+        g_confirm_group = NULL;
+    }
+    if (apply) start_download();
+}
+
+static void open_download_confirm(void) {
+    if (g_confirm_overlay) return;
+    int count = eff_count();
+    if (count == 0) return;
+    int idx = eff_data_idx(g_selected);
+
+    g_confirm_overlay = lv_obj_create(lv_screen_active());
+    lv_obj_set_size(g_confirm_overlay, LV_PCT(100), LV_PCT(100));
+    lv_obj_set_style_bg_color(g_confirm_overlay, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_bg_opa(g_confirm_overlay, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(g_confirm_overlay, 0, 0);
+    lv_obj_remove_flag(g_confirm_overlay, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_event_cb(g_confirm_overlay, confirm_key_cb, LV_EVENT_KEY, NULL);
+
+    lv_obj_t *box = lv_obj_create(g_confirm_overlay);
+    lv_obj_set_size(box, LV_PCT(90), 160);
+    lv_obj_center(box);
+    lv_obj_set_style_bg_color(box, lv_color_hex(0x111111), 0);
+    lv_obj_set_style_border_color(box, lv_color_hex(0x555555), 0);
+    lv_obj_set_style_border_width(box, 1, 0);
+    lv_obj_remove_flag(box, LV_OBJ_FLAG_SCROLLABLE);
+
+    char sizebuf[32];
+    format_size(g_list.items[idx].size, sizebuf, sizeof(sizebuf));
+    char msg[220];
+    snprintf(msg, sizeof(msg), "Download this rom?\n\n%s\n%s",
+             display_name(g_list.items[idx].name), sizebuf);
+
+    lv_obj_t *label = lv_label_create(box);
+    lv_label_set_text(label, msg);
+    lv_obj_set_style_text_color(label, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_width(label, LV_PCT(100));
+    lv_obj_align(label, LV_ALIGN_TOP_MID, 0, 8);
+
+    lv_obj_t *hint = lv_label_create(box);
+    lv_label_set_text(hint, "A: Confirm   B: Cancel");
+    lv_obj_set_style_text_color(hint, lv_color_hex(0x888888), 0);
+    lv_obj_align(hint, LV_ALIGN_BOTTOM_MID, 0, -8);
+
+    g_confirm_group = lv_group_create();
+    lv_group_add_obj(g_confirm_group, g_confirm_overlay);
+    lvgl_glue_set_active_group(g_confirm_group);
 }
 
 static void start_download(void) {
@@ -363,7 +446,12 @@ static void key_event_cb(lv_event_t *e) {
             g_on_back();
         }
     } else if (key == LV_KEY_ENTER) {
-        start_download();
+        if (count > 0) {
+            int idx = eff_data_idx(g_selected);
+            if (!download_file_exists(g_roms_dir, display_name(g_list.items[idx].name))) {
+                open_download_confirm();
+            }
+        }
     }
 }
 
@@ -381,6 +469,9 @@ void ui_rom_list_build(lv_group_t *group, const EmuEntry *emu, RomList list,
     g_filter_count = 0;
     g_search_overlay = NULL;
     g_search_group = NULL;
+    g_confirm_overlay = NULL;
+    g_confirm_group = NULL;
+    g_confirm_close_pending = false;
     g_marquee_row = -1;
     g_marquee_pending_row = -1;
     g_status_msg_pending = false;
@@ -489,11 +580,15 @@ static void update_download(void) {
             lv_bar_set_value(g_download_bar, (int32_t)(progress * 100), LV_ANIM_OFF);
             break;
         case DOWNLOAD_DONE:
+            /* No transient toast here: redraw() below unhides the
+             * persistent green "Downloaded" label right below the size,
+             * so showing a second "Downloaded!" toast at the same time
+             * just duplicated the same text stacked on screen (reported
+             * directly). The toast is still useful for FAILED, since
+             * there's no persistent indicator for that case. */
             lv_obj_add_flag(g_download_bar, LV_OBJ_FLAG_HIDDEN);
-            lv_label_set_text(g_download_status_label, "Downloaded!");
-            lv_obj_set_style_text_color(g_download_status_label, lv_color_hex(0x2ecc40), 0);
-            g_status_msg_pending = true;
-            g_status_msg_tick = lv_tick_get();
+            lv_obj_add_flag(g_download_status_label, LV_OBJ_FLAG_HIDDEN);
+            g_status_msg_pending = false;
             download_reset();
             redraw(); /* picks up the now-downloaded file for the "Downloaded" label */
             break;
@@ -518,6 +613,7 @@ static void update_download(void) {
 
 void ui_rom_list_tick(void) {
     process_pending_search_close();
+    process_pending_confirm_close();
     update_keyboard_highlight();
     update_marquee();
     update_download();
@@ -535,6 +631,7 @@ void ui_rom_list_tick(void) {
 void ui_rom_list_destroy(void) {
     g_thumb_pending_idx = -1;
     g_search_close_pending = false;
+    g_confirm_close_pending = false;
     g_kb = NULL;
     g_kb_last_sel = LV_BUTTONMATRIX_BUTTON_NONE;
     /* safe to delete synchronously here — called from main.c's screen
@@ -547,6 +644,14 @@ void ui_rom_list_destroy(void) {
     if (g_search_group) {
         lv_group_delete(g_search_group);
         g_search_group = NULL;
+    }
+    if (g_confirm_overlay) {
+        lv_obj_delete(g_confirm_overlay);
+        g_confirm_overlay = NULL;
+    }
+    if (g_confirm_group) {
+        lv_group_delete(g_confirm_group);
+        g_confirm_group = NULL;
     }
     net_archive_free(&g_list);
 }
