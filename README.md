@@ -3,6 +3,12 @@
 Native GUI ROM downloader app for Onion OS (Miyoo Mini Plus). See
 `/Users/eren/.claude/plans/compressed-herding-twilight.md` for the full plan.
 
+## Screenshots
+
+| System select | ROM list + box art |
+|---|---|
+| ![System select](docs/screenshots/emu-select.png) | ![ROM list](docs/screenshots/rom-list.png) |
+
 ## Installation
 
 1. Download `rom-downloader-<version>.zip` from the

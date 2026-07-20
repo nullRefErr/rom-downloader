@@ -131,7 +131,12 @@ int main(int argc, char **argv) {
                 SDL_bool pressed = (ev.type == SDL_KEYDOWN) ? SDL_TRUE : SDL_FALSE;
                 if (ev.type == SDL_KEYDOWN) {
                     logmsg("KEYDOWN sym=%d (0x%x) name=%s", (int)kc, (int)kc, SDL_GetKeyName(kc));
-                    if (kc == SDLK_ESCAPE) running = 0; /* Menu on device, ESC on host */
+                    /* Start on device, Return on host. Was Menu/ESC, but
+                     * that made the device's own MENU+X screenshot
+                     * shortcut unusable — holding Menu quit the app before
+                     * X could be pressed (reported directly). Menu is now
+                     * unclaimed by the app entirely. */
+                    if (kc == SDLK_RETURN) running = 0;
                     if (kc == SDLK_LALT && g_screen == SCREEN_ROM_LIST) { /* Y */
                         /* Y opens search; once search is open, reaching the
                          * on-screen keyboard's own tiny backspace key by

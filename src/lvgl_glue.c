@@ -71,8 +71,11 @@ static uint32_t sdl_key_to_lv(SDL_Keycode sym) {
         case SDLK_LEFT: return LV_KEY_LEFT;     /* page back in the ROM list */
         case SDLK_RIGHT: return LV_KEY_RIGHT;   /* page forward */
         case SDLK_SPACE: return LV_KEY_ENTER;   /* A */
-        case SDLK_RETURN: return LV_KEY_ENTER;  /* Start */
         case SDLK_LCTRL: return LV_KEY_ESC;     /* B */
+        /* Start (SDLK_RETURN) is NOT mapped here on purpose — main.c uses
+         * it exclusively to quit the app now, it doesn't double as another
+         * confirm button (that would fire a confirm dialog right before
+         * quitting on the same keypress). */
         default: return 0;
     }
 }
