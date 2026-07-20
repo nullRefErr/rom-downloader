@@ -56,7 +56,7 @@ static void on_emu_selected(const EmuEntry *emu) {
     logmsg("fetch done: ok=%d count=%d", list.ok, list.count);
 
     lv_obj_clean(lv_screen_active());
-    ui_rom_list_build(g_group, emu->label, list, emu->thumb_repo, on_back_to_emu_select);
+    ui_rom_list_build(g_group, emu, list, on_back_to_emu_select);
     g_screen = SCREEN_ROM_LIST;
 }
 

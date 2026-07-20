@@ -3,6 +3,7 @@
 
 #include "lvgl.h"
 #include "net_archive.h"
+#include "emu_table.h"
 #include <stdbool.h>
 
 typedef void (*ui_rom_list_back_cb_t)(void);
@@ -11,11 +12,12 @@ typedef void (*ui_rom_list_back_cb_t)(void);
  * entries, so a fixed small pool of row widgets is recycled and relabeled
  * as the user scrolls, rather than creating one widget per entry. Takes
  * ownership of `list` (frees it internally when the screen is torn down
- * via ui_rom_list_destroy). D-pad Up/Down scrolls, B/ESC calls on_back.
- * `thumb_repo` (may be NULL) is the libretro-thumbnails repo used to
- * best-effort fetch box art for the currently-selected entry. */
-void ui_rom_list_build(lv_group_t *group, const char *title, RomList list,
-                        const char *thumb_repo, ui_rom_list_back_cb_t on_back);
+ * via ui_rom_list_destroy). D-pad Up/Down scrolls, Left/Right pages,
+ * A/Enter downloads the selected rom into Roms/<emu->code>/, B/ESC calls
+ * on_back. `emu` must outlive the screen (main.c's EMU_TABLE is static,
+ * so a pointer into it is fine). */
+void ui_rom_list_build(lv_group_t *group, const EmuEntry *emu, RomList list,
+                        ui_rom_list_back_cb_t on_back);
 
 /* Call once per main loop iteration while this screen may be active —
  * fires the debounced box-art fetch for the current selection once it's

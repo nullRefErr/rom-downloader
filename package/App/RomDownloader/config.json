@@ -1,6 +1,6 @@
 {
 "label":"Rom Downloader By AEY",
-"icon":"../../Icons/Default/app/ereader.png",
+"icon":"icon.png",
 "launch":"launch.sh",
 "description":"Browse and download roms from archive.org"
 }

@@ -3,6 +3,7 @@
 #include "ui_chrome.h"
 #include "thumbnail.h"
 #include "lvgl_glue.h"
+#include "download.h"
 #include <stdio.h>
 #include <stdbool.h>
 #include <string.h>
@@ -22,11 +23,15 @@ static lv_obj_t *g_empty_label;
 static lv_obj_t *g_thumb_img;
 static lv_obj_t *g_info_label;
 static lv_obj_t *g_page_label;
+static lv_obj_t *g_downloaded_label;
+static lv_obj_t *g_download_bar;
+static lv_obj_t *g_download_status_label;
 static lv_obj_t *g_container;
 static RomList g_list;
 static int g_selected;     /* position within the effective (filtered or not) list */
 static int g_window_start; /* position of the item shown in g_rows[0] */
-static const char *g_thumb_repo;
+static const EmuEntry *g_emu;
+static char g_roms_dir[300]; /* /mnt/SDCARD/Roms/<emu->code> */
 static int g_thumb_pending_idx = -1; /* index waiting on the debounce timer, -1 = none */
 static uint32_t g_thumb_dirty_tick;
 static ui_rom_list_back_cb_t g_on_back;
@@ -45,6 +50,16 @@ static lv_group_t *g_group;
 static int g_marquee_row = -1;    /* visible row index (0..ROWS_VISIBLE-1) currently animating, -1 = none */
 static int g_marquee_pending_row; /* visible row index waiting on the debounce, -1 = none */
 static uint32_t g_marquee_dirty_tick;
+
+/* Confusion in practice: a user downloaded a rom successfully, backed out,
+ * and reported "couldn't find the game" — turned out the emulator's game
+ * list just needed a fresh open (the already-cached view they were looking
+ * at hadn't picked up reset_list.sh's cache-clear yet), not a real bug. The
+ * status message hiding itself instantly on DONE didn't help — give the
+ * user a moment of explicit confirmation instead of an instant disappear. */
+#define STATUS_MSG_MS 2000
+static bool g_status_msg_pending;
+static uint32_t g_status_msg_tick;
 
 /* search filter: a subset of g_list, by position */
 static int g_filter_idx[MAX_FILTER_ITEMS];
@@ -140,8 +155,16 @@ static void redraw(void) {
         char sizebuf[32];
         format_size(g_list.items[idx].size, sizebuf, sizeof(sizebuf));
         lv_label_set_text(g_info_label, sizebuf);
+
+        if (download_file_exists(g_roms_dir, display_name(g_list.items[idx].name))) {
+            lv_label_set_text(g_downloaded_label, "Downloaded");
+            lv_obj_remove_flag(g_downloaded_label, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(g_downloaded_label, LV_OBJ_FLAG_HIDDEN);
+        }
     } else {
         lv_label_set_text(g_info_label, "");
+        lv_obj_add_flag(g_downloaded_label, LV_OBJ_FLAG_HIDDEN);
     }
 
     char pagebuf[32];
@@ -158,7 +181,7 @@ static void redraw(void) {
      * keystroke storm while scrolling — that's what read as "still slow"
      * even though the file was already on disk. */
     int idx = count > 0 ? eff_data_idx(g_selected) : -1;
-    bool cached = idx >= 0 && thumbnail_try_cache(g_thumb_img, g_thumb_repo, g_list.items[idx].name);
+    bool cached = idx >= 0 && thumbnail_try_cache(g_thumb_img, g_emu->thumb_repo, g_list.items[idx].name);
     if (cached) {
         g_thumb_pending_idx = -1;
     } else {
@@ -290,6 +313,22 @@ void ui_rom_list_search_backspace(void) {
     lv_textarea_delete_char(ta);
 }
 
+static void start_download(void) {
+    int count = eff_count();
+    if (count == 0) return;
+    int idx = eff_data_idx(g_selected);
+    RomEntry *item = &g_list.items[idx];
+    if (download_file_exists(g_roms_dir, display_name(item->name))) return; /* already have it */
+
+    download_start(g_emu->archive_id, item->name, g_roms_dir, display_name(item->name), item->size);
+    g_status_msg_pending = false; /* a stale DONE/FAILED message from a previous item shouldn't linger */
+    lv_bar_set_value(g_download_bar, 0, LV_ANIM_OFF);
+    lv_obj_remove_flag(g_download_bar, LV_OBJ_FLAG_HIDDEN);
+    lv_label_set_text(g_download_status_label, "Downloading...");
+    lv_obj_set_style_text_color(g_download_status_label, lv_color_hex(0xffffff), 0);
+    lv_obj_remove_flag(g_download_status_label, LV_OBJ_FLAG_HIDDEN);
+}
+
 static void key_event_cb(lv_event_t *e) {
     uint32_t key = lv_event_get_key(e);
     int count = eff_count();
@@ -323,16 +362,18 @@ static void key_event_cb(lv_event_t *e) {
         } else if (g_on_back) {
             g_on_back();
         }
+    } else if (key == LV_KEY_ENTER) {
+        start_download();
     }
-    /* LV_KEY_ENTER (download trigger) is Phase 4 — not wired yet. */
 }
 
-void ui_rom_list_build(lv_group_t *group, const char *title, RomList list,
-                        const char *thumb_repo, ui_rom_list_back_cb_t on_back) {
+void ui_rom_list_build(lv_group_t *group, const EmuEntry *emu, RomList list,
+                        ui_rom_list_back_cb_t on_back) {
     g_list = list;
     g_selected = 0;
     g_window_start = 0;
-    g_thumb_repo = thumb_repo;
+    g_emu = emu;
+    snprintf(g_roms_dir, sizeof(g_roms_dir), "/mnt/SDCARD/Roms/%s", emu->code);
     g_thumb_pending_idx = -1;
     g_on_back = on_back;
     g_group = group;
@@ -342,12 +383,14 @@ void ui_rom_list_build(lv_group_t *group, const char *title, RomList list,
     g_search_group = NULL;
     g_marquee_row = -1;
     g_marquee_pending_row = -1;
+    g_status_msg_pending = false;
+    download_reset();
 
     char header[80];
     if (g_list.ok) {
-        snprintf(header, sizeof(header), "%s", title);
+        snprintf(header, sizeof(header), "%s", emu->label);
     } else {
-        snprintf(header, sizeof(header), "%s (source unavailable)", title);
+        snprintf(header, sizeof(header), "%s (source unavailable)", emu->label);
     }
     ui_chrome_build(header, "Up/Down: Move  Left/Right: Page  Y: Search  A: DL  B: Back");
 
@@ -377,6 +420,24 @@ void ui_rom_list_build(lv_group_t *group, const char *title, RomList list,
     lv_obj_set_style_text_color(g_page_label, lv_color_hex(0x777777), 0);
     lv_obj_set_style_text_font(g_page_label, &lv_font_montserrat_16, 0);
     lv_obj_align(g_page_label, LV_ALIGN_TOP_RIGHT, -4, UI_CHROME_HEADER_H + 168);
+
+    g_downloaded_label = lv_label_create(screen);
+    lv_obj_set_style_text_color(g_downloaded_label, lv_color_hex(0x2ecc40), 0); /* green, per request */
+    lv_obj_set_style_text_font(g_downloaded_label, &lv_font_montserrat_16, 0);
+    lv_obj_align(g_downloaded_label, LV_ALIGN_TOP_RIGHT, -4, UI_CHROME_HEADER_H + 188);
+    lv_obj_add_flag(g_downloaded_label, LV_OBJ_FLAG_HIDDEN);
+
+    g_download_bar = lv_bar_create(screen);
+    lv_obj_set_size(g_download_bar, 132, 14);
+    lv_obj_align(g_download_bar, LV_ALIGN_TOP_RIGHT, -4, UI_CHROME_HEADER_H + 212);
+    lv_bar_set_range(g_download_bar, 0, 100);
+    lv_obj_add_flag(g_download_bar, LV_OBJ_FLAG_HIDDEN);
+
+    g_download_status_label = lv_label_create(screen);
+    lv_obj_set_style_text_color(g_download_status_label, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_font(g_download_status_label, &lv_font_montserrat_16, 0);
+    lv_obj_align(g_download_status_label, LV_ALIGN_TOP_RIGHT, -4, UI_CHROME_HEADER_H + 230);
+    lv_obj_add_flag(g_download_status_label, LV_OBJ_FLAG_HIDDEN);
 
     g_container = lv_obj_create(screen);
     lv_obj_set_size(g_container, 480, 480 - UI_CHROME_HEADER_H - UI_CHROME_FOOTER_H);
@@ -420,10 +481,46 @@ void ui_rom_list_build(lv_group_t *group, const char *title, RomList list,
     lv_obj_add_event_cb(g_container, key_event_cb, LV_EVENT_KEY, NULL);
 }
 
+static void update_download(void) {
+    float progress = 0.0f;
+    DownloadState state = download_poll(&progress);
+    switch (state) {
+        case DOWNLOAD_RUNNING:
+            lv_bar_set_value(g_download_bar, (int32_t)(progress * 100), LV_ANIM_OFF);
+            break;
+        case DOWNLOAD_DONE:
+            lv_obj_add_flag(g_download_bar, LV_OBJ_FLAG_HIDDEN);
+            lv_label_set_text(g_download_status_label, "Downloaded!");
+            lv_obj_set_style_text_color(g_download_status_label, lv_color_hex(0x2ecc40), 0);
+            g_status_msg_pending = true;
+            g_status_msg_tick = lv_tick_get();
+            download_reset();
+            redraw(); /* picks up the now-downloaded file for the "Downloaded" label */
+            break;
+        case DOWNLOAD_FAILED:
+            lv_obj_add_flag(g_download_bar, LV_OBJ_FLAG_HIDDEN);
+            lv_label_set_text(g_download_status_label, "Download failed");
+            lv_obj_set_style_text_color(g_download_status_label, lv_color_hex(0xff4136), 0);
+            lv_obj_remove_flag(g_download_status_label, LV_OBJ_FLAG_HIDDEN);
+            g_status_msg_pending = true;
+            g_status_msg_tick = lv_tick_get();
+            download_reset();
+            break;
+        case DOWNLOAD_IDLE:
+            break;
+    }
+
+    if (g_status_msg_pending && lv_tick_elaps(g_status_msg_tick) >= STATUS_MSG_MS) {
+        g_status_msg_pending = false;
+        lv_obj_add_flag(g_download_status_label, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
 void ui_rom_list_tick(void) {
     process_pending_search_close();
     update_keyboard_highlight();
     update_marquee();
+    update_download();
 
     if (g_thumb_pending_idx < 0) return;
     if (lv_tick_elaps(g_thumb_dirty_tick) < THUMB_DEBOUNCE_MS) return;
@@ -431,7 +528,7 @@ void ui_rom_list_tick(void) {
     int idx = g_thumb_pending_idx;
     g_thumb_pending_idx = -1;
     if (idx >= 0 && idx < g_list.count) {
-        thumbnail_fetch_network(g_thumb_img, g_thumb_repo, g_list.items[idx].name);
+        thumbnail_fetch_network(g_thumb_img, g_emu->thumb_repo, g_list.items[idx].name);
     }
 }
 
