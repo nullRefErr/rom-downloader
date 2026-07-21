@@ -20,11 +20,14 @@ to play by the time you back out of the menu.
    itself uses for every app).
 3. Reboot the device (or rescan Apps), then launch **Rom Downloader By AEY**
    from the Apps menu.
-4. Pick a system (currently PlayStation and Genesis — the only two
-   archive.org source collections that are alive; others are grayed out),
-   browse or press Y to search, press A on a rom to confirm and download.
-   It lands directly in `Roms/<system>/` and shows up in the emulator's
-   game list without a manual rescan.
+4. Pick a system (PlayStation, Genesis, Game Boy, Game Boy Color, Game Boy
+   Advance, NES, SNES — any grayed out means that system's archive.org
+   source is temporarily down), browse or press Y to search, press A on a
+   rom to confirm and download. It lands directly in `Roms/<system>/` and
+   shows up in the emulator's game list without a manual rescan.
+
+The app checks for updates on startup and offers to install new versions
+in place — see the [Changelog](CHANGELOG.md) for what's changed.
 
 ## Contributing
 
