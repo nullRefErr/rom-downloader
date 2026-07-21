@@ -18,10 +18,20 @@ typedef enum {
  * to `dest_filename.part` first; download_poll() only renames to the
  * final name on success, so an interrupted download (wifi drop) can't
  * leave a corrupt-but-complete-looking rom sitting under its real name.
- * No-op if a download is already running. */
+ * No-op if a download is already running. Triggers Onion's reset_list.sh
+ * refresh on completion (see download_poll). */
 void download_start(const char *identifier, const char *item_path,
                      const char *dest_dir, const char *dest_filename,
                      unsigned long expected_size);
+
+/* Same download engine as download_start() (backgrounded wget, .part-then-
+ * rename, progress via download_poll()), but takes a fully-formed URL
+ * directly instead of building an archive.org one — used by the self-
+ * updater to fetch a GitHub release asset. Does NOT trigger reset_list.sh
+ * on completion, that's rom-library-specific and meaningless for the
+ * app's own binary. */
+void download_start_url(const char *url, const char *dest_dir,
+                         const char *dest_filename, unsigned long expected_size);
 
 /* Call every tick while a download might be in flight. On DOWNLOAD_DONE
  * this also renames .part -> final and invokes Onion's own

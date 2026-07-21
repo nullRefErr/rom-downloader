@@ -5,17 +5,21 @@
 #include <SDL2/SDL.h>
 #include <stdarg.h>
 #include <stdio.h>
+#include <unistd.h>
 #include "lvgl.h"
 #include "lvgl_glue.h"
 #include "ui_emu_select.h"
 #include "ui_rom_list.h"
+#include "ui_update.h"
 #include "ui_style.h"
 #include "net_archive.h"
+#include "net_update.h"
 
 static FILE *g_log;
 static lv_group_t *g_group;
+static char **g_argv;
 
-typedef enum { SCREEN_EMU_SELECT, SCREEN_ROM_LIST } Screen;
+typedef enum { SCREEN_UPDATE, SCREEN_EMU_SELECT, SCREEN_ROM_LIST } Screen;
 static Screen g_screen;
 
 static void logmsg(const char *fmt, ...) {
@@ -65,9 +69,35 @@ static void show_emu_select(void) {
     g_screen = SCREEN_EMU_SELECT;
 }
 
+/* Blocking GitHub Releases check (small JSON response, 5s timeout ceiling
+ * inside net_update_check) — same "Loading..." pattern as
+ * on_emu_selected()'s archive.org fetch. Skips straight to the emulator
+ * list whenever there's nothing to show, so a declined/failed/no-update
+ * check never adds a screen the user has to click past. */
+static void show_update_check(void) {
+    lv_obj_set_style_bg_color(lv_screen_active(), lv_color_hex(0x000000), 0);
+    lv_obj_set_style_bg_opa(lv_screen_active(), LV_OPA_COVER, 0);
+    lv_obj_t *checking = lv_label_create(lv_screen_active());
+    lv_obj_set_style_text_color(checking, lv_color_hex(0xffffff), 0);
+    lv_label_set_text(checking, "Checking for updates...");
+    lv_obj_center(checking);
+    lvgl_glue_force_redraw();
+
+    UpdateCheckResult upd = net_update_check();
+    logmsg("update check: ok=%d available=%d latest=%s", upd.ok, upd.update_available, upd.latest_tag);
+
+    lv_obj_clean(lv_screen_active());
+    if (upd.ok && upd.update_available) {
+        ui_update_build(g_group, &upd);
+        g_screen = SCREEN_UPDATE;
+    } else {
+        show_emu_select();
+    }
+}
+
 int main(int argc, char **argv) {
     (void)argc;
-    (void)argv;
+    g_argv = argv;
     g_log = fopen("log.txt", "a");
     if (!g_log) g_log = stderr;
     logmsg("=== romdownloader phase3 start ===");
@@ -117,8 +147,8 @@ int main(int argc, char **argv) {
     SDL_Delay(1200);
     lv_obj_clean(lv_screen_active());
 
-    show_emu_select();
-    logmsg("emu select screen built OK");
+    show_update_check();
+    logmsg("update check / emu select screen built OK");
 
     int running = 1;
     unsigned frame = 0;
@@ -152,6 +182,28 @@ int main(int argc, char **argv) {
         lv_tick_inc(16);
         lv_timer_handler();
         if (g_screen == SCREEN_ROM_LIST) ui_rom_list_tick();
+        if (g_screen == SCREEN_UPDATE) {
+            UiUpdateStatus st = ui_update_tick();
+            if (st == UI_UPDATE_FINISHED) {
+                lv_obj_clean(lv_screen_active());
+                show_emu_select();
+            } else if (st == UI_UPDATE_RESTART) {
+                /* romdownloader.new already renamed over romdownloader by
+                 * ui_update.c — SDL_Quit() first so the mmiyoo driver's
+                 * device fds (framebuffer, input) are closed cleanly
+                 * before execv, which carries open fds forward into the
+                 * new process image and would otherwise fight the freshly
+                 * exec'd binary's own SDL_Init() for the same devices. */
+                logmsg("update: installed, restarting into new binary");
+                fclose(g_log);
+                SDL_DestroyRenderer(ren);
+                SDL_DestroyWindow(win);
+                SDL_Quit();
+                execv(g_argv[0], g_argv);
+                /* only reached if execv itself failed to launch */
+                _exit(1);
+            }
+        }
         if (frame % 120 == 0) logmsg("heartbeat: frame=%u", frame);
         frame++;
         SDL_Delay(16);

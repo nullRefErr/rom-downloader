@@ -73,9 +73,10 @@ static void url_encode_path(const char *in, char *out, size_t outsz) {
     out[o] = '\0';
 }
 
-void download_start(const char *identifier, const char *item_path,
-                     const char *dest_dir, const char *dest_filename,
-                     unsigned long expected_size) {
+static bool g_refresh_game_list;
+
+static void begin_download(const char *url, const char *dest_dir,
+                            const char *dest_filename, unsigned long expected_size) {
     if (g_state == DOWNLOAD_RUNNING) return;
 
     g_expected_size = expected_size;
@@ -90,10 +91,7 @@ void download_start(const char *identifier, const char *item_path,
     remove(g_done_marker);
     remove(g_failed_marker);
 
-    char encoded_path[600], url[900], cmd[3072];
-    url_encode_path(item_path, encoded_path, sizeof(encoded_path));
-    snprintf(url, sizeof(url), "https://archive.org/download/%s/%s", identifier, encoded_path);
-
+    char cmd[3072];
     char part_q[600], done_q[600], failed_q[600];
     shell_quote(g_part_path, part_q, sizeof(part_q));
     shell_quote(g_done_marker, done_q, sizeof(done_q));
@@ -111,6 +109,26 @@ void download_start(const char *identifier, const char *item_path,
     g_state = DOWNLOAD_RUNNING;
 }
 
+void download_start(const char *identifier, const char *item_path,
+                     const char *dest_dir, const char *dest_filename,
+                     unsigned long expected_size) {
+    if (g_state == DOWNLOAD_RUNNING) return;
+
+    char encoded_path[600], url[900];
+    url_encode_path(item_path, encoded_path, sizeof(encoded_path));
+    snprintf(url, sizeof(url), "https://archive.org/download/%s/%s", identifier, encoded_path);
+
+    g_refresh_game_list = true;
+    begin_download(url, dest_dir, dest_filename, expected_size);
+}
+
+void download_start_url(const char *url, const char *dest_dir,
+                         const char *dest_filename, unsigned long expected_size) {
+    if (g_state == DOWNLOAD_RUNNING) return;
+    g_refresh_game_list = false;
+    begin_download(url, dest_dir, dest_filename, expected_size);
+}
+
 DownloadState download_poll(float *out_progress) {
     if (g_state != DOWNLOAD_RUNNING) return g_state;
 
@@ -123,17 +141,21 @@ DownloadState download_poll(float *out_progress) {
         dlog("download: complete, saved to %s", g_final_path);
 
         /* refresh Onion's game-list cache — easy detail to drop, and
-         * without it the new rom doesn't show up until a manual rescan. */
-        char resetcmd[700];
-        snprintf(resetcmd, sizeof(resetcmd),
-                 "if [ -f /mnt/SDCARD/.tmp_update/script/reset_list.sh ]; then "
-                 "/mnt/SDCARD/.tmp_update/script/reset_list.sh '%s' >/tmp/romdl_resetlist.log 2>&1; "
-                 "echo rc=$? >> /tmp/romdl_resetlist.log; "
-                 "else echo 'reset_list.sh not found' > /tmp/romdl_resetlist.log; fi",
-                 g_roms_dir);
-        int rc = system(resetcmd);
-        dlog("download: reset_list.sh invoked for '%s', system() rc=%d (see /tmp/romdl_resetlist.log on-device)",
-             g_roms_dir, rc);
+         * without it the new rom doesn't show up until a manual rescan.
+         * Only for rom downloads — meaningless (and wasteful) for the
+         * app's own binary update, see g_refresh_game_list. */
+        if (g_refresh_game_list) {
+            char resetcmd[700];
+            snprintf(resetcmd, sizeof(resetcmd),
+                     "if [ -f /mnt/SDCARD/.tmp_update/script/reset_list.sh ]; then "
+                     "/mnt/SDCARD/.tmp_update/script/reset_list.sh '%s' >/tmp/romdl_resetlist.log 2>&1; "
+                     "echo rc=$? >> /tmp/romdl_resetlist.log; "
+                     "else echo 'reset_list.sh not found' > /tmp/romdl_resetlist.log; fi",
+                     g_roms_dir);
+            int rc = system(resetcmd);
+            dlog("download: reset_list.sh invoked for '%s', system() rc=%d (see /tmp/romdl_resetlist.log on-device)",
+                 g_roms_dir, rc);
+        }
 
         g_state = DOWNLOAD_DONE;
         return g_state;

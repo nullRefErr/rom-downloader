@@ -1,3 +1,5 @@
 /build/
 /package/App/RomDownloader/romdownloader
 /rom-downloader-*.zip
+.DS_Store
+/log.txt
