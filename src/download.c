@@ -33,6 +33,28 @@ static long file_size(const char *path) {
     return sz;
 }
 
+/* Quote a string for safe embedding in a shell command (POSIX single-quote
+ * escaping: close the quote, insert an escaped literal quote, reopen).
+ * Game titles routinely contain apostrophes ("Awesome Possum Kicks Dr.
+ * Machino's Butt", "Adiboo & Paziral's Secret" — 150+ in the PS1 catalog
+ * alone, 300+ in Genesis) which otherwise break out of the single-quoted
+ * paths in download_start()'s wget command, same bug class as the one
+ * already fixed in thumbnail.c's sanitize_filename(), just unfixed here. */
+static void shell_quote(const char *in, char *out, size_t outsz) {
+    size_t o = 0;
+    if (o + 1 < outsz) out[o++] = '\'';
+    for (size_t i = 0; in[i] && o + 5 < outsz; i++) {
+        if (in[i] == '\'') {
+            memcpy(out + o, "'\\''", 4);
+            o += 4;
+        } else {
+            out[o++] = in[i];
+        }
+    }
+    if (o + 1 < outsz) out[o++] = '\'';
+    out[o] = '\0';
+}
+
 /* Same idea as thumbnail.c's url_encode, but keeps '/' literal — archive.org
  * item paths are real subdirectory paths within the item (e.g.
  * "CHD-PSX-EUR/007 - The World Is Not Enough (Europe).chd"), not a single
@@ -71,13 +93,19 @@ void download_start(const char *identifier, const char *item_path,
     char encoded_path[600], url[900], cmd[3072];
     url_encode_path(item_path, encoded_path, sizeof(encoded_path));
     snprintf(url, sizeof(url), "https://archive.org/download/%s/%s", identifier, encoded_path);
+
+    char part_q[600], done_q[600], failed_q[600];
+    shell_quote(g_part_path, part_q, sizeof(part_q));
+    shell_quote(g_done_marker, done_q, sizeof(done_q));
+    shell_quote(g_failed_marker, failed_q, sizeof(failed_q));
+
     /* backgrounded (&) so download_poll() can be called from the main
      * loop without blocking the UI — same reasoning as everywhere else
      * in this app, just async this time since a rom download can take
      * much longer than a metadata fetch or a thumbnail. */
     snprintf(cmd, sizeof(cmd),
-             "(wget -q -O '%s' '%s' && touch '%s') || touch '%s' &",
-             g_part_path, url, g_done_marker, g_failed_marker);
+             "(wget -q -O %s '%s' && touch %s) || touch %s &",
+             part_q, url, done_q, failed_q);
     system(cmd);
 
     g_state = DOWNLOAD_RUNNING;
