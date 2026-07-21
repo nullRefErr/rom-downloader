@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.3.0
+
+- **Disk space indicator**: free SD space shown in the header, updated after each download.
+- **Wi-Fi indicator**: connection status shown as a Wi-Fi symbol in the header (green connected, red disconnected).
+- **Download queue**: queue multiple roms — they download one after another in the background and keep going even if you back out of the list.
+- **Resume**: an interrupted download (wifi drop, app closed) picks up where it left off instead of restarting.
+- **Region filter**: filter the list by USA / Europe / Japan / World, via the Select button.
+- **Favourites**: mark roms with X (shown with a `*`), and filter to favourites-only. Saved per system.
+
 ## v1.2.0
 
 - **Self-updater**: the app now checks GitHub Releases on startup and, if a newer version is published, shows an "Update Available" prompt — press A to download and install in place, B to skip. No manual SD card copying needed for future updates.

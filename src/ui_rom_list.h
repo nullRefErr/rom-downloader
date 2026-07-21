@@ -20,8 +20,9 @@ void ui_rom_list_build(lv_group_t *group, const EmuEntry *emu, RomList list,
                         ui_rom_list_back_cb_t on_back);
 
 /* Call once per main loop iteration while this screen may be active —
- * fires the debounced box-art fetch for the current selection once it's
- * been stable for a bit (harmless no-op when this screen isn't active). */
+ * fires the debounced box-art fetch for the current selection, drives the
+ * deferred overlay teardown, and reflects download-queue status into the
+ * progress UI (harmless no-op when this screen isn't active). */
 void ui_rom_list_tick(void);
 
 /* Opens the search keyboard overlay (only valid while this screen is the
@@ -39,6 +40,14 @@ bool ui_rom_list_search_is_open(void);
 /* Deletes the character before the cursor in the search text box. No-op
  * if search isn't open. */
 void ui_rom_list_search_backspace(void);
+
+/* Toggles the favourite status of the selected rom (X button). No-op if
+ * any overlay is open or the list is empty. */
+void ui_rom_list_toggle_favorite(void);
+
+/* Opens the region / favourites-only filter overlay (Select button).
+ * No-op if another overlay is already open. */
+void ui_rom_list_open_filter(void);
 
 /* Frees the RomList this screen owns. Call before rebuilding another
  * screen over this one (e.g. from within on_back, before ui_emu_select

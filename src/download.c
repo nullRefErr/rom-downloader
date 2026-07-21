@@ -87,7 +87,10 @@ static void begin_download(const char *url, const char *dest_dir,
     snprintf(g_roms_dir, sizeof(g_roms_dir), "%s", dest_dir);
 
     mkdir(dest_dir, 0755); /* ignore EEXIST — Roms/<CODE> should already exist, belt and suspenders */
-    remove(g_part_path);
+    /* Deliberately NOT removing g_part_path: a leftover .part from an
+     * interrupted attempt (wifi drop, app killed) is exactly what `wget -c`
+     * resumes from, so keeping it is the whole point of the resume feature.
+     * Markers are still cleared — they're per-attempt signals. */
     remove(g_done_marker);
     remove(g_failed_marker);
 
@@ -97,12 +100,14 @@ static void begin_download(const char *url, const char *dest_dir,
     shell_quote(g_done_marker, done_q, sizeof(done_q));
     shell_quote(g_failed_marker, failed_q, sizeof(failed_q));
 
-    /* backgrounded (&) so download_poll() can be called from the main
-     * loop without blocking the UI — same reasoning as everywhere else
-     * in this app, just async this time since a rom download can take
-     * much longer than a metadata fetch or a thumbnail. */
+    /* -c: continue a partially-downloaded .part instead of restarting from
+     * zero (archive.org and GitHub both honour HTTP range requests).
+     * backgrounded (&) so download_poll() can be called from the main loop
+     * without blocking the UI — same reasoning as everywhere else in this
+     * app, just async this time since a rom download can take much longer
+     * than a metadata fetch or a thumbnail. */
     snprintf(cmd, sizeof(cmd),
-             "(wget -q -O %s '%s' && touch %s) || touch %s &",
+             "(wget -q -c -O %s '%s' && touch %s) || touch %s &",
              part_q, url, done_q, failed_q);
     system(cmd);
 
@@ -165,7 +170,11 @@ DownloadState download_poll(float *out_progress) {
     if (failed) {
         fclose(failed);
         remove(g_failed_marker);
-        remove(g_part_path);
+        /* Keep g_part_path on failure so the next attempt at this same rom
+         * resumes via `wget -c` instead of starting over. A partial file
+         * for an abandoned rom just lingers (harmless — the "Downloaded"
+         * check looks at the final name, never the .part), and gets
+         * overwritten/continued if the user retries it. */
         g_state = DOWNLOAD_FAILED;
         return g_state;
     }

@@ -11,9 +11,18 @@
 #include "ui_emu_select.h"
 #include "ui_rom_list.h"
 #include "ui_update.h"
+#include "ui_chrome.h"
 #include "ui_style.h"
 #include "net_archive.h"
 #include "net_update.h"
+#include "download_queue.h"
+
+/* Select button — opens the region/favourites filter overlay on the rom
+ * list. This SDL keycode is the reasonable-default assumption for Select on
+ * this device (its exact mapping wasn't in the Phase 1 keylog, only the
+ * face/d-pad/Start/Menu buttons were); every keydown is logged, so it's
+ * trivial to confirm/correct against a real Select press. */
+#define KEY_SELECT SDLK_RCTRL
 
 static FILE *g_log;
 static lv_group_t *g_group;
@@ -132,6 +141,7 @@ int main(int argc, char **argv) {
         logmsg("lvgl_glue_init failed: %s", SDL_GetError());
         return 1;
     }
+    queue_reset(); /* once at startup — the queue outlives individual screens */
     logmsg("lvgl init OK");
 
     /* splash */
@@ -175,12 +185,24 @@ int main(int argc, char **argv) {
                         if (ui_rom_list_search_is_open()) ui_rom_list_search_backspace();
                         else ui_rom_list_open_search();
                     }
+                    if (kc == SDLK_LSHIFT && g_screen == SCREEN_ROM_LIST) { /* X */
+                        ui_rom_list_toggle_favorite();
+                    }
+                    if (kc == KEY_SELECT && g_screen == SCREEN_ROM_LIST) { /* Select */
+                        ui_rom_list_open_filter();
+                    }
                 }
                 lvgl_glue_feed_key(kc, pressed);
             }
         }
         lv_tick_inc(16);
         lv_timer_handler();
+        /* Drive the download queue every frame EXCEPT on the update screen,
+         * where ui_update.c owns the (shared, single) download state machine
+         * directly — letting the queue poll it too would race for the DONE
+         * transition. The queue is empty during the startup update prompt
+         * anyway, but gating it here keeps that guarantee explicit. */
+        if (g_screen != SCREEN_UPDATE) queue_tick();
         if (g_screen == SCREEN_ROM_LIST) ui_rom_list_tick();
         if (g_screen == SCREEN_UPDATE) {
             UiUpdateStatus st = ui_update_tick();
@@ -204,7 +226,10 @@ int main(int argc, char **argv) {
                 _exit(1);
             }
         }
-        if (frame % 120 == 0) logmsg("heartbeat: frame=%u", frame);
+        if (frame % 120 == 0) {
+            logmsg("heartbeat: frame=%u", frame);
+            ui_chrome_refresh_status(); /* ~2s cadence: Wi-Fi + free space */
+        }
         frame++;
         SDL_Delay(16);
     }

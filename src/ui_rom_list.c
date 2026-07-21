@@ -4,6 +4,9 @@
 #include "thumbnail.h"
 #include "lvgl_glue.h"
 #include "download.h"
+#include "download_queue.h"
+#include "favorites.h"
+#include "filter.h"
 #include <stdio.h>
 #include <stdbool.h>
 #include <string.h>
@@ -61,10 +64,15 @@ static uint32_t g_marquee_dirty_tick;
 static bool g_status_msg_pending;
 static uint32_t g_status_msg_tick;
 
-/* search filter: a subset of g_list, by position */
+/* Combined filter: a subset of g_list (by position) matching ALL active
+ * criteria at once — search text AND region AND favourites-only. Each is
+ * independently toggleable; g_filter_active is true if any is engaged. */
 static int g_filter_idx[MAX_FILTER_ITEMS];
 static int g_filter_count;
 static bool g_filter_active;
+static char g_query[64];         /* current search text ("" = none) */
+static RegionFilter g_region;    /* REGION_ALL = no region constraint */
+static bool g_fav_only;          /* show only favourited roms */
 static lv_obj_t *g_search_overlay;
 static lv_group_t *g_search_group;
 static lv_obj_t *g_kb;
@@ -77,6 +85,18 @@ static bool g_confirm_close_apply;
 static lv_obj_t *g_confirm_overlay;
 static lv_group_t *g_confirm_group;
 static void start_download(void);
+
+/* region/favourites filter overlay (Select button) — see open_filter() */
+static bool g_filter_close_pending;
+static bool g_filter_close_apply;
+static lv_obj_t *g_filter_overlay;
+static lv_group_t *g_filter_group;
+static lv_obj_t *g_filter_region_label;
+static lv_obj_t *g_filter_fav_label;
+static int g_filter_sel;             /* 0 = region row, 1 = favourites row */
+static RegionFilter g_filter_tmp_region;
+static bool g_filter_tmp_fav;
+static void apply_filters(void);
 
 /* The keyboard's default per-button FOCUSED/FOCUS_KEY style (driven by
  * lv_group's object-level focus state cascading down to whichever button
@@ -138,7 +158,18 @@ static void redraw(void) {
         if (pos < count) {
             int idx = eff_data_idx(pos);
             lv_obj_remove_flag(g_rows[i], LV_OBJ_FLAG_HIDDEN);
-            lv_label_set_text(g_row_labels[i], display_name(g_list.items[idx].name));
+            const char *dn = display_name(g_list.items[idx].name);
+            /* "* " prefix marks a favourite. A real star glyph (U+2605)
+             * isn't in the Montserrat font range LVGL bakes in, and there's
+             * no LV_SYMBOL_STAR, so a plain ASCII asterisk is the reliable
+             * choice that always renders. */
+            if (favorites_is(dn)) {
+                char rowbuf[256];
+                snprintf(rowbuf, sizeof(rowbuf), "* %s", dn);
+                lv_label_set_text(g_row_labels[i], rowbuf);
+            } else {
+                lv_label_set_text(g_row_labels[i], dn);
+            }
             /* static (no animation) by default — see update_marquee() for
              * why only the selected row, after a delay, gets to scroll */
             lv_label_set_long_mode(g_row_labels[i], LV_LABEL_LONG_MODE_DOTS);
@@ -170,15 +201,31 @@ static void redraw(void) {
         } else {
             lv_obj_add_flag(g_downloaded_label, LV_OBJ_FLAG_HIDDEN);
         }
+        lv_obj_add_flag(g_empty_label, LV_OBJ_FLAG_HIDDEN);
     } else {
         lv_label_set_text(g_info_label, "");
         lv_obj_add_flag(g_downloaded_label, LV_OBJ_FLAG_HIDDEN);
+        /* empty state — must be handled here, not just at build time: a
+         * filter (search/region/fav-only) can collapse a populated catalog
+         * to zero rows, and without this the user saw a blank list plus the
+         * previous selection's stale box art and no explanation. */
+        lv_label_set_text(g_empty_label,
+                          g_filter_active ? "No matching roms" :
+                          (g_list.ok ? "No roms" : "Source unavailable right now"));
+        lv_obj_remove_flag(g_empty_label, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(g_thumb_img, LV_OBJ_FLAG_HIDDEN);
     }
 
-    char pagebuf[32];
+    char pagebuf[48];
     int page = count > 0 ? (g_selected / ROWS_VISIBLE) + 1 : 0;
     int pages = count > 0 ? (count + ROWS_VISIBLE - 1) / ROWS_VISIBLE : 0;
-    snprintf(pagebuf, sizeof(pagebuf), "%d/%d", page, pages);
+    /* prefix a compact active-filter tag so it's obvious the list is
+     * scoped (region name and/or "*" for favourites-only) */
+    char tag[24] = "";
+    if (g_region != REGION_ALL) snprintf(tag, sizeof(tag), "%s", region_label(g_region));
+    if (g_fav_only) { size_t l = strlen(tag); snprintf(tag + l, sizeof(tag) - l, "%s*", l ? " " : ""); }
+    if (tag[0]) snprintf(pagebuf, sizeof(pagebuf), "%s  %d/%d", tag, page, pages);
+    else snprintf(pagebuf, sizeof(pagebuf), "%d/%d", page, pages);
     lv_label_set_text(g_page_label, pagebuf);
 
     /* Cache check is fast (local file, no network) so it happens on every
@@ -198,28 +245,42 @@ static void redraw(void) {
     }
 }
 
-static void apply_filter(const char *query) {
-    g_filter_active = (query[0] != '\0');
+/* Rebuild g_filter_idx from the combined state of all three filters
+ * (search text g_query, region g_region, favourites-only g_fav_only). An
+ * item survives only if it passes every active criterion. When nothing is
+ * engaged, g_filter_active is false and the full list is used directly
+ * (eff_count/eff_data_idx). */
+static void apply_filters(void) {
+    bool has_query = (g_query[0] != '\0');
+    bool has_region = (g_region != REGION_ALL);
+    g_filter_active = has_query || has_region || g_fav_only;
+
     g_filter_count = 0;
     if (g_filter_active) {
         char qlow[64];
         int i;
-        for (i = 0; query[i] && i < (int)sizeof(qlow) - 1; i++) {
-            char c = query[i];
+        for (i = 0; g_query[i] && i < (int)sizeof(qlow) - 1; i++) {
+            char c = g_query[i];
             qlow[i] = (c >= 'A' && c <= 'Z') ? (char)(c + 'a' - 'A') : c;
         }
         qlow[i] = '\0';
 
         for (int di = 0; di < g_list.count && g_filter_count < MAX_FILTER_ITEMS; di++) {
-            char namelow[160];
             const char *n = display_name(g_list.items[di].name);
-            int j;
-            for (j = 0; n[j] && j < (int)sizeof(namelow) - 1; j++) {
-                char c = n[j];
-                namelow[j] = (c >= 'A' && c <= 'Z') ? (char)(c + 'a' - 'A') : c;
+
+            if (has_region && !region_matches(n, g_region)) continue;
+            if (g_fav_only && !favorites_is(n)) continue;
+            if (has_query) {
+                char namelow[256]; /* comfortably covers the longest real leaf names */
+                int j;
+                for (j = 0; n[j] && j < (int)sizeof(namelow) - 1; j++) {
+                    char c = n[j];
+                    namelow[j] = (c >= 'A' && c <= 'Z') ? (char)(c + 'a' - 'A') : c;
+                }
+                namelow[j] = '\0';
+                if (!strstr(namelow, qlow)) continue;
             }
-            namelow[j] = '\0';
-            if (strstr(namelow, qlow)) g_filter_idx[g_filter_count++] = di;
+            g_filter_idx[g_filter_count++] = di;
         }
     }
     g_selected = 0;
@@ -255,7 +316,8 @@ static void process_pending_search_close(void) {
 
     if (g_search_close_apply && g_search_overlay) {
         lv_obj_t *ta = lv_obj_get_child(g_search_overlay, 0);
-        apply_filter(lv_textarea_get_text(ta));
+        snprintf(g_query, sizeof(g_query), "%s", lv_textarea_get_text(ta));
+        apply_filters();
     }
     lvgl_glue_set_active_group(g_group);
     g_kb = NULL;
@@ -270,7 +332,7 @@ static void process_pending_search_close(void) {
 }
 
 void ui_rom_list_open_search(void) {
-    if (g_search_overlay || g_confirm_overlay) return;
+    if (g_search_overlay || g_confirm_overlay || g_filter_overlay) return;
 
     g_search_overlay = lv_obj_create(lv_screen_active());
     lv_obj_set_size(g_search_overlay, LV_PCT(100), LV_PCT(100));
@@ -403,13 +465,138 @@ static void start_download(void) {
     RomEntry *item = &g_list.items[idx];
     if (download_file_exists(g_roms_dir, display_name(item->name))) return; /* already have it */
 
-    download_start(g_emu->archive_id, item->name, g_roms_dir, display_name(item->name), item->size);
-    g_status_msg_pending = false; /* a stale DONE/FAILED message from a previous item shouldn't linger */
-    lv_bar_set_value(g_download_bar, 0, LV_ANIM_OFF);
-    lv_obj_remove_flag(g_download_bar, LV_OBJ_FLAG_HIDDEN);
-    lv_label_set_text(g_download_status_label, "Downloading...");
-    lv_obj_set_style_text_color(g_download_status_label, lv_color_hex(0xffffff), 0);
-    lv_obj_remove_flag(g_download_status_label, LV_OBJ_FLAG_HIDDEN);
+    /* Enqueue rather than start directly — the queue (queue_tick, driven
+     * from the main loop) owns the download lifecycle now, so multiple
+     * roms can be lined up and each still completes even if the user backs
+     * out mid-download. queue_add dedups and rejects already-have items;
+     * the progress UI is filled in from queue status in update_download(). */
+    queue_add(g_emu->archive_id, item->name, g_roms_dir, display_name(item->name), item->size);
+    g_status_msg_pending = false; /* a stale DONE/FAILED message shouldn't linger over a new one */
+}
+
+/* ---- region / favourites filter overlay (Select) ---- */
+
+static void render_filter_overlay(void) {
+    char rbuf[48], fbuf[48];
+    /* "> " marks the row the D-pad is on; Left/Right changes that row's
+     * value. Kept text-only (no focus styling) for the same reason the
+     * search keyboard does — this device's per-widget focus styling has
+     * been unreliable, an explicit marker always renders. */
+    snprintf(rbuf, sizeof(rbuf), "%sRegion:  < %s >",
+             g_filter_sel == 0 ? "> " : "  ", region_label(g_filter_tmp_region));
+    snprintf(fbuf, sizeof(fbuf), "%sFavourites only:  %s",
+             g_filter_sel == 1 ? "> " : "  ", g_filter_tmp_fav ? "On" : "Off");
+    lv_label_set_text(g_filter_region_label, rbuf);
+    lv_label_set_text(g_filter_fav_label, fbuf);
+}
+
+static void filter_key_cb(lv_event_t *e) {
+    uint32_t key = lv_event_get_key(e);
+    if (key == LV_KEY_UP || key == LV_KEY_DOWN) {
+        g_filter_sel ^= 1; /* only two rows */
+        render_filter_overlay();
+    } else if (key == LV_KEY_LEFT || key == LV_KEY_RIGHT) {
+        if (g_filter_sel == 0) {
+            int r = (int)g_filter_tmp_region + (key == LV_KEY_RIGHT ? 1 : -1);
+            if (r < 0) r = REGION_COUNT - 1;
+            if (r >= REGION_COUNT) r = 0;
+            g_filter_tmp_region = (RegionFilter)r;
+        } else {
+            g_filter_tmp_fav = !g_filter_tmp_fav;
+        }
+        render_filter_overlay();
+    } else if (key == LV_KEY_ENTER) {
+        g_filter_close_pending = true;
+        g_filter_close_apply = true;
+    } else if (key == LV_KEY_ESC) {
+        g_filter_close_pending = true;
+        g_filter_close_apply = false;
+    }
+}
+
+static void process_pending_filter_close(void) {
+    if (!g_filter_close_pending) return;
+    g_filter_close_pending = false;
+    bool apply = g_filter_close_apply;
+
+    lvgl_glue_set_active_group(g_group);
+    if (g_filter_overlay) {
+        lv_obj_delete(g_filter_overlay);
+        g_filter_overlay = NULL;
+    }
+    if (g_filter_group) {
+        lv_group_delete(g_filter_group);
+        g_filter_group = NULL;
+    }
+    g_filter_region_label = NULL;
+    g_filter_fav_label = NULL;
+
+    if (apply) {
+        g_region = g_filter_tmp_region;
+        g_fav_only = g_filter_tmp_fav;
+        apply_filters();
+    }
+}
+
+void ui_rom_list_open_filter(void) {
+    if (g_search_overlay || g_confirm_overlay || g_filter_overlay) return;
+
+    g_filter_tmp_region = g_region;
+    g_filter_tmp_fav = g_fav_only;
+    g_filter_sel = 0;
+
+    g_filter_overlay = lv_obj_create(lv_screen_active());
+    lv_obj_set_size(g_filter_overlay, LV_PCT(100), LV_PCT(100));
+    lv_obj_set_style_bg_color(g_filter_overlay, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_bg_opa(g_filter_overlay, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(g_filter_overlay, 0, 0);
+    lv_obj_remove_flag(g_filter_overlay, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_event_cb(g_filter_overlay, filter_key_cb, LV_EVENT_KEY, NULL);
+
+    lv_obj_t *box = lv_obj_create(g_filter_overlay);
+    lv_obj_set_size(box, LV_PCT(90), 180);
+    lv_obj_center(box);
+    lv_obj_set_style_bg_color(box, lv_color_hex(0x111111), 0);
+    lv_obj_set_style_border_color(box, lv_color_hex(0x555555), 0);
+    lv_obj_set_style_border_width(box, 1, 0);
+    lv_obj_remove_flag(box, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t *title = lv_label_create(box);
+    lv_label_set_text(title, "Filters");
+    lv_obj_set_style_text_color(title, lv_color_hex(0xffffff), 0);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 4);
+
+    g_filter_region_label = lv_label_create(box);
+    lv_obj_set_style_text_color(g_filter_region_label, lv_color_hex(0xffffff), 0);
+    lv_obj_align(g_filter_region_label, LV_ALIGN_TOP_LEFT, 8, 44);
+
+    g_filter_fav_label = lv_label_create(box);
+    lv_obj_set_style_text_color(g_filter_fav_label, lv_color_hex(0xffffff), 0);
+    lv_obj_align(g_filter_fav_label, LV_ALIGN_TOP_LEFT, 8, 76);
+
+    lv_obj_t *hint = lv_label_create(box);
+    lv_label_set_text(hint, "Up/Down: Row  Left/Right: Change  A: Apply  B: Cancel");
+    lv_obj_set_style_text_color(hint, lv_color_hex(0x888888), 0);
+    lv_obj_set_style_text_font(hint, &lv_font_montserrat_14, 0);
+    lv_obj_align(hint, LV_ALIGN_BOTTOM_MID, 0, -8);
+
+    render_filter_overlay();
+
+    g_filter_group = lv_group_create();
+    lv_group_add_obj(g_filter_group, g_filter_overlay);
+    lvgl_glue_set_active_group(g_filter_group);
+}
+
+void ui_rom_list_toggle_favorite(void) {
+    if (g_search_overlay || g_confirm_overlay || g_filter_overlay) return;
+    int count = eff_count();
+    if (count == 0) return;
+    int idx = eff_data_idx(g_selected);
+    favorites_toggle(display_name(g_list.items[idx].name));
+    /* if favourites-only is on, toggling off the selected rom drops it from
+     * the list — apply_filters rebuilds; otherwise just refresh the star */
+    if (g_fav_only) apply_filters();
+    else redraw();
 }
 
 static void key_event_cb(lv_event_t *e) {
@@ -441,7 +628,11 @@ static void key_event_cb(lv_event_t *e) {
         }
     } else if (key == LV_KEY_ESC) {
         if (g_filter_active) {
-            apply_filter(""); /* first Back clears the search, second one leaves */
+            /* first Back clears every active filter, second one leaves */
+            g_query[0] = '\0';
+            g_region = REGION_ALL;
+            g_fav_only = false;
+            apply_filters();
         } else if (g_on_back) {
             g_on_back();
         }
@@ -467,15 +658,26 @@ void ui_rom_list_build(lv_group_t *group, const EmuEntry *emu, RomList list,
     g_group = group;
     g_filter_active = false;
     g_filter_count = 0;
+    g_query[0] = '\0';
+    g_region = REGION_ALL;
+    g_fav_only = false;
     g_search_overlay = NULL;
     g_search_group = NULL;
     g_confirm_overlay = NULL;
     g_confirm_group = NULL;
     g_confirm_close_pending = false;
+    g_filter_overlay = NULL;
+    g_filter_group = NULL;
+    g_filter_close_pending = false;
+    g_filter_region_label = NULL;
+    g_filter_fav_label = NULL;
     g_marquee_row = -1;
     g_marquee_pending_row = -1;
     g_status_msg_pending = false;
-    download_reset();
+    /* NOTE: the download queue is deliberately NOT reset here — it's owned
+     * app-wide (queue_reset runs once at startup) so an in-flight download
+     * survives leaving and re-entering this screen. */
+    favorites_load(emu->code);
 
     char header[80];
     if (g_list.ok) {
@@ -483,7 +685,7 @@ void ui_rom_list_build(lv_group_t *group, const EmuEntry *emu, RomList list,
     } else {
         snprintf(header, sizeof(header), "%s (source unavailable)", emu->label);
     }
-    ui_chrome_build(header, "Up/Down: Move  Left/Right: Page  Y: Search  A: DL  B: Back");
+    ui_chrome_build(header, "A:DL  Y:Search  X:Fav  Sel:Filter  B:Back");
 
     lv_obj_t *screen = lv_screen_active();
 
@@ -560,11 +762,7 @@ void ui_rom_list_build(lv_group_t *group, const EmuEntry *emu, RomList list,
     g_empty_label = lv_label_create(screen);
     lv_obj_set_style_text_color(g_empty_label, lv_color_hex(0xffffff), 0);
     lv_obj_align(g_empty_label, LV_ALIGN_CENTER, -80, 0);
-    if (g_list.count == 0) {
-        lv_label_set_text(g_empty_label, g_list.ok ? "No matching roms" : "Source unavailable right now");
-    } else {
-        lv_obj_add_flag(g_empty_label, LV_OBJ_FLAG_HIDDEN);
-    }
+    lv_obj_add_flag(g_empty_label, LV_OBJ_FLAG_HIDDEN); /* redraw() sets text+visibility from eff_count() */
 
     redraw();
 
@@ -572,37 +770,50 @@ void ui_rom_list_build(lv_group_t *group, const EmuEntry *emu, RomList list,
     lv_obj_add_event_cb(g_container, key_event_cb, LV_EVENT_KEY, NULL);
 }
 
+/* Mirror the download queue's state into the progress UI. The queue (not
+ * this function) owns download_poll, so here we only read status and paint.
+ * queue_tick() runs in main.c every frame regardless of screen, so a
+ * download that finished while the user was elsewhere is reported via
+ * last_result the moment they're back on this screen. */
 static void update_download(void) {
-    float progress = 0.0f;
-    DownloadState state = download_poll(&progress);
-    switch (state) {
-        case DOWNLOAD_RUNNING:
-            lv_bar_set_value(g_download_bar, (int32_t)(progress * 100), LV_ANIM_OFF);
-            break;
-        case DOWNLOAD_DONE:
-            /* No transient toast here: redraw() below unhides the
-             * persistent green "Downloaded" label right below the size,
-             * so showing a second "Downloaded!" toast at the same time
-             * just duplicated the same text stacked on screen (reported
-             * directly). The toast is still useful for FAILED, since
-             * there's no persistent indicator for that case. */
-            lv_obj_add_flag(g_download_bar, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_add_flag(g_download_status_label, LV_OBJ_FLAG_HIDDEN);
-            g_status_msg_pending = false;
-            download_reset();
-            redraw(); /* picks up the now-downloaded file for the "Downloaded" label */
-            break;
-        case DOWNLOAD_FAILED:
-            lv_obj_add_flag(g_download_bar, LV_OBJ_FLAG_HIDDEN);
-            lv_label_set_text(g_download_status_label, "Download failed");
-            lv_obj_set_style_text_color(g_download_status_label, lv_color_hex(0xff4136), 0);
+    QueueStatus qs;
+    queue_get_status(&qs);
+
+    /* consume a completion event first */
+    if (qs.last_result == QRESULT_DONE) {
+        queue_clear_last_result();
+        /* No transient "Downloaded!" toast — redraw() unhides the
+         * persistent green "Downloaded" label under the size, and showing
+         * both at once duplicated the text on screen (reported directly).
+         * The toast is kept only for the FAILED case, which has no
+         * persistent indicator of its own. */
+        g_status_msg_pending = false;
+        lv_obj_add_flag(g_download_status_label, LV_OBJ_FLAG_HIDDEN);
+        redraw();                 /* refresh "Downloaded" for the current row */
+        ui_chrome_refresh_status(); /* free space dropped */
+    } else if (qs.last_result == QRESULT_FAILED) {
+        queue_clear_last_result();
+        lv_label_set_text(g_download_status_label, "Download failed");
+        lv_obj_set_style_text_color(g_download_status_label, lv_color_hex(0xff4136), 0);
+        lv_obj_remove_flag(g_download_status_label, LV_OBJ_FLAG_HIDDEN);
+        g_status_msg_pending = true;
+        g_status_msg_tick = lv_tick_get();
+    }
+
+    if (qs.active) {
+        lv_bar_set_value(g_download_bar, (int32_t)(qs.progress * 100), LV_ANIM_OFF);
+        lv_obj_remove_flag(g_download_bar, LV_OBJ_FLAG_HIDDEN);
+        if (!g_status_msg_pending) { /* don't clobber a failed toast still showing */
+            char buf[48];
+            if (qs.waiting > 0) snprintf(buf, sizeof(buf), "Downloading... (+%d)", qs.waiting);
+            else snprintf(buf, sizeof(buf), "Downloading...");
+            lv_label_set_text(g_download_status_label, buf);
+            lv_obj_set_style_text_color(g_download_status_label, lv_color_hex(0xffffff), 0);
             lv_obj_remove_flag(g_download_status_label, LV_OBJ_FLAG_HIDDEN);
-            g_status_msg_pending = true;
-            g_status_msg_tick = lv_tick_get();
-            download_reset();
-            break;
-        case DOWNLOAD_IDLE:
-            break;
+        }
+    } else {
+        lv_obj_add_flag(g_download_bar, LV_OBJ_FLAG_HIDDEN);
+        if (!g_status_msg_pending) lv_obj_add_flag(g_download_status_label, LV_OBJ_FLAG_HIDDEN);
     }
 
     if (g_status_msg_pending && lv_tick_elaps(g_status_msg_tick) >= STATUS_MSG_MS) {
@@ -614,6 +825,7 @@ static void update_download(void) {
 void ui_rom_list_tick(void) {
     process_pending_search_close();
     process_pending_confirm_close();
+    process_pending_filter_close();
     update_keyboard_highlight();
     update_marquee();
     update_download();
@@ -632,6 +844,7 @@ void ui_rom_list_destroy(void) {
     g_thumb_pending_idx = -1;
     g_search_close_pending = false;
     g_confirm_close_pending = false;
+    g_filter_close_pending = false;
     g_kb = NULL;
     g_kb_last_sel = LV_BUTTONMATRIX_BUTTON_NONE;
     /* safe to delete synchronously here — called from main.c's screen
@@ -653,5 +866,15 @@ void ui_rom_list_destroy(void) {
         lv_group_delete(g_confirm_group);
         g_confirm_group = NULL;
     }
+    if (g_filter_overlay) {
+        lv_obj_delete(g_filter_overlay);
+        g_filter_overlay = NULL;
+    }
+    if (g_filter_group) {
+        lv_group_delete(g_filter_group);
+        g_filter_group = NULL;
+    }
+    g_filter_region_label = NULL;
+    g_filter_fav_label = NULL;
     net_archive_free(&g_list);
 }
