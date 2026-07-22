@@ -100,14 +100,18 @@ static void begin_download(const char *url, const char *dest_dir,
     shell_quote(g_done_marker, done_q, sizeof(done_q));
     shell_quote(g_failed_marker, failed_q, sizeof(failed_q));
 
+    dlog("download: starting %s -> %s", url, g_final_path);
+
     /* -c: continue a partially-downloaded .part instead of restarting from
      * zero (archive.org and GitHub both honour HTTP range requests).
-     * backgrounded (&) so download_poll() can be called from the main loop
-     * without blocking the UI — same reasoning as everywhere else in this
-     * app, just async this time since a rom download can take much longer
-     * than a metadata fetch or a thumbnail. */
+     * -nv (not -q): keep wget quiet on the UI but still emit the one-line
+     * result and any error ("404 Not Found", "No space left on device",
+     * "unable to resolve host") — the whole group's stdout+stderr is
+     * appended to log.txt so a failed download actually records WHY, which
+     * a bare `-q` swallowed entirely. backgrounded (&) so download_poll()
+     * can be called from the main loop without blocking the UI. */
     snprintf(cmd, sizeof(cmd),
-             "(wget -q -c -O %s '%s' && touch %s) || touch %s &",
+             "( (wget -nv -c -O %s '%s' && touch %s) || touch %s ) >>log.txt 2>&1 &",
              part_q, url, done_q, failed_q);
     system(cmd);
 
