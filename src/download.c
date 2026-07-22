@@ -102,16 +102,18 @@ static void begin_download(const char *url, const char *dest_dir,
 
     dlog("download: starting %s -> %s", url, g_final_path);
 
-    /* -c: continue a partially-downloaded .part instead of restarting from
-     * zero (archive.org and GitHub both honour HTTP range requests).
-     * -nv (not -q): keep wget quiet on the UI but still emit the one-line
-     * result and any error ("404 Not Found", "No space left on device",
-     * "unable to resolve host") — the whole group's stdout+stderr is
-     * appended to log.txt so a failed download actually records WHY, which
-     * a bare `-q` swallowed entirely. backgrounded (&) so download_poll()
-     * can be called from the main loop without blocking the UI. */
+    /* This device ships BusyBox wget, which supports -c (confirmed: it
+     * honours HTTP range requests for resume) but NOT -nv (rejects it as
+     * "invalid option", which broke every download), and its -q suppresses
+     * error messages entirely. So use plain wget: no -q means BusyBox still
+     * prints the failure reason ("HTTP error 404", "No space left") to
+     * stderr, and — because stderr is redirected to a file here, not a tty —
+     * it emits only a few status lines, no animated progress bar. The whole
+     * group's output is appended to log.txt so a failed download records
+     * WHY. backgrounded (&) so download_poll() can run from the main loop
+     * without blocking the UI. */
     snprintf(cmd, sizeof(cmd),
-             "( (wget -nv -c -O %s '%s' && touch %s) || touch %s ) >>log.txt 2>&1 &",
+             "( (wget -c -O %s '%s' && touch %s) || touch %s ) >>log.txt 2>&1 &",
              part_q, url, done_q, failed_q);
     system(cmd);
 
