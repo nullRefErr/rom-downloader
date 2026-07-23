@@ -151,21 +151,27 @@ DownloadState download_poll(float *out_progress) {
 
         dlog("download: complete, saved to %s", g_final_path);
 
-        /* refresh Onion's game-list cache — easy detail to drop, and
-         * without it the new rom doesn't show up until a manual rescan.
-         * Only for rom downloads — meaningless (and wasteful) for the
-         * app's own binary update, see g_refresh_game_list. */
+        /* refresh Onion's game-list cache — without it the new rom doesn't
+         * show up until a manual rescan. Only for rom downloads (meaningless
+         * for the app's own binary update, see g_refresh_game_list).
+         *
+         * BACKGROUNDED (&): reset_list.sh rescans the whole destination
+         * Roms/<code> folder, and on a device with a large existing library
+         * for that system that rescan takes long enough that running it
+         * synchronously here froze the UI right after a successful download
+         * (reported via Reddit: "app froze after a successful GB download" —
+         * a user with a full Game Boy library). This system() is called from
+         * download_poll() on the render loop, so it must not block; the cache
+         * just refreshes a moment later, async. */
         if (g_refresh_game_list) {
             char resetcmd[700];
             snprintf(resetcmd, sizeof(resetcmd),
-                     "if [ -f /mnt/SDCARD/.tmp_update/script/reset_list.sh ]; then "
-                     "/mnt/SDCARD/.tmp_update/script/reset_list.sh '%s' >/tmp/romdl_resetlist.log 2>&1; "
-                     "echo rc=$? >> /tmp/romdl_resetlist.log; "
-                     "else echo 'reset_list.sh not found' > /tmp/romdl_resetlist.log; fi",
+                     "( [ -f /mnt/SDCARD/.tmp_update/script/reset_list.sh ] && "
+                     "/mnt/SDCARD/.tmp_update/script/reset_list.sh '%s' ) "
+                     ">/tmp/romdl_resetlist.log 2>&1 &",
                      g_roms_dir);
-            int rc = system(resetcmd);
-            dlog("download: reset_list.sh invoked for '%s', system() rc=%d (see /tmp/romdl_resetlist.log on-device)",
-                 g_roms_dir, rc);
+            system(resetcmd);
+            dlog("download: reset_list.sh launched in background for '%s'", g_roms_dir);
         }
 
         g_state = DOWNLOAD_DONE;

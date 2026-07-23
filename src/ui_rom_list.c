@@ -365,7 +365,12 @@ void ui_rom_list_open_search(void) {
     lv_obj_set_style_bg_color(g_kb, lv_color_hex(0x222222), LV_PART_ITEMS);
     lv_obj_set_style_bg_opa(g_kb, LV_OPA_COVER, LV_PART_ITEMS);
     lv_obj_set_style_text_color(g_kb, lv_color_hex(0xffffff), LV_PART_ITEMS);
-    lv_obj_set_style_bg_color(g_kb, lv_color_hex(0xffffff), LV_PART_ITEMS | LV_STATE_CHECKED);
+    /* Focused key uses a vivid green fill, NOT white — the default keyboard
+     * theme already renders the special keys (Enter/Space/Caps/Backspace) in
+     * a light colour, so a white highlight was indistinguishable from them
+     * and you couldn't tell which key was selected while typing (reported via
+     * Reddit). Green matches the app accent and collides with nothing. */
+    lv_obj_set_style_bg_color(g_kb, lv_color_hex(0x2ecc40), LV_PART_ITEMS | LV_STATE_CHECKED);
     lv_obj_set_style_text_color(g_kb, lv_color_hex(0x000000), LV_PART_ITEMS | LV_STATE_CHECKED);
 
     g_search_group = lv_group_create();
