@@ -1,6 +1,14 @@
 # Changelog
 
-## v1.3.0
+## v1.3.1
+
+Fixes on top of the v1.3.0 feature set (v1.3.0 was pulled before release):
+
+- **Downloads fixed on BusyBox wget**: an unsupported flag made every download fail the instant it started; now uses a supported form and logs the real failure reason to `log.txt`.
+- **No more freeze after a successful download**: the game-list cache refresh now runs in the background instead of blocking the UI (was noticeable on systems with a large existing library).
+- **Clearer on-screen keyboard**: the focused key is now green, distinct from the special keys.
+
+### Features (from v1.3.0)
 
 - **Disk space indicator**: free SD space shown in the header, updated after each download.
 - **Wi-Fi indicator**: connection status shown as a Wi-Fi symbol in the header (green connected, red disconnected).
