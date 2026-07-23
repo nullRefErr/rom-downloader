@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.3.2
+
+- **Added 5 new console systems**: Sega Game Gear (`GG`), Sega Master System (`MS`), PC Engine (`PCE`), Atari 2600 (`2600`), and Atari 7800 (`7800`) are now fully supported with working Archive.org collections.
+
 ## v1.3.1
 
 Fixes on top of the v1.3.0 feature set (v1.3.0 was pulled before release):
