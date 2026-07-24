@@ -77,15 +77,16 @@ UiUpdateStatus ui_update_tick(void) {
             lv_bar_set_value(g_bar, (int32_t)(progress * 100), LV_ANIM_OFF);
         } else if (st == DOWNLOAD_DONE) {
             download_reset();
-            /* wget doesn't set the executable bit; chmod before the swap
-             * so there's never a moment where "romdownloader" on disk is
-             * present but not executable. */
-            chmod("romdownloader.new", 0755);
-            if (rename("romdownloader.new", "romdownloader") == 0) {
-                g_state = ST_RESTART;
-            } else {
-                show_failure("Update failed (couldn't install)");
-            }
+            /* Do NOT rename romdownloader.new over romdownloader here: the SD
+             * card is FAT32 (confirmed: vfat mount), which has no inode
+             * indirection, so replacing the currently-EXECUTING binary in
+             * place fails/corrupts — that's exactly what produced the
+             * "Update failed" in the field (download succeeded, install
+             * didn't). Instead leave the new binary as romdownloader.new and
+             * exit; launch.sh swaps it in on the next start, when nothing is
+             * executing romdownloader. */
+            chmod("romdownloader.new", 0755); /* launch.sh re-chmods too, belt and suspenders */
+            g_state = ST_RESTART;
         } else if (st == DOWNLOAD_FAILED) {
             download_reset();
             show_failure("Update download failed");

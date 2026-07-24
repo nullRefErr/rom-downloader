@@ -5,7 +5,6 @@
 #include <SDL2/SDL.h>
 #include <stdarg.h>
 #include <stdio.h>
-#include <unistd.h>
 #include "lvgl.h"
 #include "lvgl_glue.h"
 #include "ui_emu_select.h"
@@ -26,7 +25,6 @@
 
 static FILE *g_log;
 static lv_group_t *g_group;
-static char **g_argv;
 
 typedef enum { SCREEN_UPDATE, SCREEN_EMU_SELECT, SCREEN_ROM_LIST } Screen;
 static Screen g_screen;
@@ -106,7 +104,7 @@ static void show_update_check(void) {
 
 int main(int argc, char **argv) {
     (void)argc;
-    g_argv = argv;
+    (void)argv;
     g_log = fopen("log.txt", "a");
     if (!g_log) g_log = stderr;
     logmsg("=== romdownloader phase3 start ===");
@@ -210,20 +208,14 @@ int main(int argc, char **argv) {
                 lv_obj_clean(lv_screen_active());
                 show_emu_select();
             } else if (st == UI_UPDATE_RESTART) {
-                /* romdownloader.new already renamed over romdownloader by
-                 * ui_update.c — SDL_Quit() first so the mmiyoo driver's
-                 * device fds (framebuffer, input) are closed cleanly
-                 * before execv, which carries open fds forward into the
-                 * new process image and would otherwise fight the freshly
-                 * exec'd binary's own SDL_Init() for the same devices. */
-                logmsg("update: installed, restarting into new binary");
-                fclose(g_log);
-                SDL_DestroyRenderer(ren);
-                SDL_DestroyWindow(win);
-                SDL_Quit();
-                execv(g_argv[0], g_argv);
-                /* only reached if execv itself failed to launch */
-                _exit(1);
+                /* The new binary is staged as romdownloader.new (NOT swapped
+                 * in yet — can't replace a running exe on FAT32). Exit
+                 * cleanly; launch.sh's loop sees romdownloader.new, swaps it
+                 * over romdownloader (safe now, nothing is executing it) and
+                 * relaunches. We do NOT execv here — that would just re-run
+                 * the OLD binary, since the swap hasn't happened. */
+                logmsg("update: staged romdownloader.new, exiting for launch.sh to swap+relaunch");
+                running = 0;
             }
         }
         if (frame % 120 == 0) {

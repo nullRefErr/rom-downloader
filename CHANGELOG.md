@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.3.3
+
+- **Auto-update now actually installs.** The updater downloaded the new build fine but couldn't swap it in — the SD card is FAT32, which can't replace a running executable in place, so the install step failed ("Update failed"). The new binary is now staged and swapped in by `launch.sh` on the next start, when nothing is running it.
+  - Note: because the broken part *was* the updater's install step, existing installs (v1.3.2 and earlier) must install this version once by hand (extract the zip to the SD card). From v1.3.3 on, in-app updates apply on their own.
+
 ## v1.3.2
 
 - **Added 5 new console systems**: Sega Game Gear (`GG`), Sega Master System (`MS`), PC Engine (`PCE`), Atari 2600 (`2600`), and Atari 7800 (`7800`) are now fully supported with working Archive.org collections.
