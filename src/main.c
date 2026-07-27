@@ -18,6 +18,7 @@
 #include "auth.h"
 #include "ui_login.h"
 #include "env.h"
+#include "sound.h"
 #include "net_login.h"
 
 /* Select button — opens the region/favourites filter overlay on the rom
@@ -26,6 +27,20 @@
  * face/d-pad/Start/Menu buttons were); every keydown is logged, so it's
  * trivial to confirm/correct against a real Select press. */
 #define KEY_SELECT SDLK_RCTRL
+
+/* Holding a direction does nothing on its own here: this device's input
+ * driver delivers one press and one release, with no auto-repeat in
+ * between, so a held d-pad moved the selection exactly once. Synthesised
+ * below rather than relying on the driver or on LVGL's long-press handling,
+ * which never sees a sustained PRESSED state through our event queue.
+ * Directions only — repeating A would fire a download per tick, and
+ * repeating B would walk back through screens. */
+#define KEY_REPEAT_DELAY_MS 350 /* hold this long before it starts */
+#define KEY_REPEAT_RATE_MS  90  /* then one step this often */
+
+static bool key_repeats(SDL_Keycode k) {
+    return k == SDLK_UP || k == SDLK_DOWN || k == SDLK_LEFT || k == SDLK_RIGHT;
+}
 
 static FILE *g_log;
 static lv_group_t *g_group;
@@ -160,6 +175,8 @@ int main(int argc, char **argv) {
     SDL_Delay(1200);
     lv_obj_clean(lv_screen_active());
 
+    sound_init(); /* silent no-op if audio can't be opened — never fatal */
+
     /* If credentials were left in .env, establish the session before the user
      * goes looking for a restricted source, so it just works. Only when there
      * is no usable session already — a stored cookie is preferred and costs
@@ -183,6 +200,8 @@ int main(int argc, char **argv) {
 
     int running = 1;
     unsigned frame = 0;
+    SDL_Keycode held = 0;
+    Uint32 held_since = 0, last_repeat = 0;
     while (running) {
         SDL_Event ev;
         while (SDL_PollEvent(&ev)) {
@@ -190,6 +209,16 @@ int main(int argc, char **argv) {
             if (ev.type == SDL_KEYDOWN || ev.type == SDL_KEYUP) {
                 SDL_Keycode kc = ev.key.keysym.sym;
                 SDL_bool pressed = (ev.type == SDL_KEYDOWN) ? SDL_TRUE : SDL_FALSE;
+                /* Ignore any auto-repeat the driver does produce, so it
+                 * can't stack with the one synthesised below. */
+                if (ev.type == SDL_KEYDOWN && ev.key.repeat) continue;
+                if (ev.type == SDL_KEYDOWN && key_repeats(kc)) {
+                    held = kc;
+                    held_since = SDL_GetTicks();
+                    last_repeat = 0;
+                } else if (ev.type == SDL_KEYUP && kc == held) {
+                    held = 0;
+                }
                 if (ev.type == SDL_KEYDOWN) {
                     logmsg("KEYDOWN sym=%d (0x%x) name=%s", (int)kc, (int)kc, SDL_GetKeyName(kc));
                     /* Start on device, Return on host. Was Menu/ESC, but
@@ -218,6 +247,18 @@ int main(int argc, char **argv) {
                 lvgl_glue_feed_key(kc, pressed);
             }
         }
+        if (held) {
+            Uint32 now = SDL_GetTicks();
+            if (now - held_since >= KEY_REPEAT_DELAY_MS &&
+                now - last_repeat >= KEY_REPEAT_RATE_MS) {
+                last_repeat = now;
+                /* a full press/release pair, since the indev consumes
+                 * discrete events rather than a sustained state */
+                lvgl_glue_feed_key_quiet(held, SDL_TRUE);
+                lvgl_glue_feed_key_quiet(held, SDL_FALSE);
+            }
+        }
+
         lv_tick_inc(16);
         lv_timer_handler();
         /* Drive the download queue every frame EXCEPT on the update screen,

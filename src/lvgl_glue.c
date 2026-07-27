@@ -1,4 +1,5 @@
 #include "lvgl_glue.h"
+#include "sound.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -80,14 +81,25 @@ static uint32_t sdl_key_to_lv(SDL_Keycode sym) {
     }
 }
 
-void lvgl_glue_feed_key(SDL_Keycode sym, SDL_bool pressed) {
+static void feed(SDL_Keycode sym, SDL_bool pressed, bool click) {
     uint32_t key = sdl_key_to_lv(sym);
     if (key == 0) return;
+    /* Click only on keys the UI actually acts on, and only on the press —
+     * clicking on release too would double every keystroke. */
+    if (pressed && click) sound_click();
     int next = (g_key_head + 1) % KEY_QUEUE_SIZE;
     if (next == g_key_tail) return; /* queue full, drop */
     g_key_queue[g_key_head].key = key;
     g_key_queue[g_key_head].state = pressed ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
     g_key_head = next;
+}
+
+void lvgl_glue_feed_key(SDL_Keycode sym, SDL_bool pressed) {
+    feed(sym, pressed, true);
+}
+
+void lvgl_glue_feed_key_quiet(SDL_Keycode sym, SDL_bool pressed) {
+    feed(sym, pressed, false);
 }
 
 static void read_cb(lv_indev_t *indev, lv_indev_data_t *data) {

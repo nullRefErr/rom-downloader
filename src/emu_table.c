@@ -18,6 +18,13 @@ const EmuEntry EMU_TABLE[] = {
     {"PCE", "PC Engine",             "nointro.tg-16",                                       "7z",  1, "NEC_-_PC_Engine_-_TurboGrafx_16"},
     {"2600", "Atari 2600",           "nointro.atari-2600",                                  "7z",  1, "Atari_-_2600"},
     {"7800", "Atari 7800",           "nointro.atari-7800",                                  "7z",  1, "Atari_-_7800"},
+    /* Unlike the others this is not a No-Intro/Redump set — it is a small
+     * user-uploaded collection (~48 titles), the only NDS source found that
+     * is neither dark nor login-restricted and actually serves its files.
+     * Names therefore don't follow the No-Intro convention, so box art will
+     * miss more often than elsewhere. Onion's own NDS emulator accepts 7z
+     * (Emu/NDS extlist: nds|zip|7z|rar), so the format lines up. */
+    {"NDS", "Nintendo DS",           "nds-roms_202310",                                     "7z",  1, "Nintendo_-_Nintendo_DS"},
 };
 
 const int EMU_TABLE_COUNT = sizeof(EMU_TABLE) / sizeof(EMU_TABLE[0]);

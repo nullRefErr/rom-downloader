@@ -16,6 +16,11 @@ lv_group_t *lvgl_glue_init(SDL_Renderer *ren, int w, int h);
  * keys (anything not in the confirmed A/B/D-pad/Start set) are ignored. */
 void lvgl_glue_feed_key(SDL_Keycode sym, SDL_bool pressed);
 
+/* Same, but without the navigation click. Used for synthesised auto-repeat
+ * while a direction is held: clicking ~11 times a second would just smear
+ * into a drone. */
+void lvgl_glue_feed_key_quiet(SDL_Keycode sym, SDL_bool pressed);
+
 /* Forces an immediate render+flush of whatever's currently marked dirty,
  * bypassing lv_timer_handler()'s normal scheduling. Needed before a
  * blocking call (e.g. the synchronous wget-based archive.org fetch) so a
