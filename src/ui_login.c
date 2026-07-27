@@ -107,6 +107,20 @@ void ui_login_open(lv_group_t *restore_group) {
     lv_obj_align(g_status, LV_ALIGN_TOP_MID, 0, 104);
     set_status("Enter your email, then press the check key. B cancels.", 0x888888);
 
+    /* Prefill from .env if it's there. The overlay is normally only reached
+     * when the startup auto-sign-in did not get us a session — i.e. exactly
+     * when something in these values needs correcting — so retyping an email
+     * on a d-pad to fix a password typo would be wasted effort. X clears the
+     * field you're on, for the case where the stored value is the wrong one. */
+    {
+        char email[256], password[256];
+        if (env_load(email, sizeof(email), password, sizeof(password))) {
+            lv_textarea_set_text(g_email_ta, email);
+            lv_textarea_set_text(g_pass_ta, password);
+            set_status("Loaded from .env. Check key confirms, X clears a field.", 0x888888);
+        }
+    }
+
     g_kb = lv_keyboard_create(g_overlay);
     lv_keyboard_set_textarea(g_kb, g_email_ta);
     lv_obj_add_event_cb(g_kb, kb_event_cb, LV_EVENT_READY, NULL);
@@ -124,6 +138,11 @@ void ui_login_open(lv_group_t *restore_group) {
 
 bool ui_login_is_open(void) {
     return g_overlay != NULL;
+}
+
+void ui_login_clear_field(void) {
+    if (!g_overlay) return;
+    lv_textarea_set_text(g_step == ST_EMAIL ? g_email_ta : g_pass_ta, "");
 }
 
 void ui_login_backspace(void) {

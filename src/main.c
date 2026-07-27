@@ -207,8 +207,9 @@ int main(int argc, char **argv) {
                         else if (ui_rom_list_search_is_open()) ui_rom_list_search_backspace();
                         else ui_rom_list_open_search();
                     }
-                    if (kc == SDLK_LSHIFT && g_screen == SCREEN_ROM_LIST) { /* X */
-                        ui_rom_list_toggle_favorite();
+                    if (kc == SDLK_LSHIFT) { /* X */
+                        if (ui_login_is_open()) ui_login_clear_field();
+                        else if (g_screen == SCREEN_ROM_LIST) ui_rom_list_toggle_favorite();
                     }
                     if (kc == KEY_SELECT && g_screen == SCREEN_ROM_LIST) { /* Select */
                         ui_rom_list_open_filter();

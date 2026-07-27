@@ -18,6 +18,10 @@ void ui_login_tick(void);
 
 bool ui_login_is_open(void);
 
+/* Empties the focused field in one press — clearing a prefilled password
+ * character by character on a d-pad is not a reasonable ask. */
+void ui_login_clear_field(void);
+
 /* Deletes the character before the cursor in the focused field, so the Y
  * button can double as backspace like it does in search. */
 void ui_login_backspace(void);
