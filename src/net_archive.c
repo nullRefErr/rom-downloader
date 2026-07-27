@@ -1,5 +1,6 @@
 #include "net_archive.h"
 #include "cJSON.h"
+#include "auth.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -87,9 +88,11 @@ RomList net_archive_fetch(const char *identifier, const char *ext) {
         }
     }
 
-    if (result.restricted) {
-        /* Deliberately do NOT return the file list: every one of those
-         * downloads would 401, so listing them only invites failures. */
+    if (result.restricted && !auth_available()) {
+        /* Anonymous: deliberately do NOT return the file list, since every
+         * one of those downloads would 401 — listing them only invites
+         * failures. With cookies configured the item is reachable, so fall
+         * through and list it normally. */
         cJSON_Delete(root);
         return result; /* ok=0, restricted=1 */
     }

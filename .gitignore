@@ -3,3 +3,7 @@
 /rom-downloader-*.zip
 .DS_Store
 /log.txt
+
+# never commit real archive.org session cookies or the generated curl config
+/package/App/RomDownloader/archive_cookies.txt
+/package/App/RomDownloader/.curl_auth.cfg

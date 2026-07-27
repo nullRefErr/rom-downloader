@@ -1,4 +1,5 @@
 #include "download.h"
+#include "auth.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -113,7 +114,26 @@ static void begin_download(const char *url, const char *dest_dir,
     shell_quote(g_done_marker, done_q, sizeof(done_q));
     shell_quote(g_failed_marker, failed_q, sizeof(failed_q));
 
-    dlog("download: starting %s -> %s", url, g_final_path);
+    dlog("download: starting %s -> %s%s", url, g_final_path,
+         auth_available() ? " (signed in)" : "");
+
+    if (auth_available()) {
+        /* Signed-in path: BusyBox wget can't carry cookies at all (no
+         * --header/--load-cookies in this build), so authenticated fetches go
+         * through the curl that Onion already ships. The cookies live in the
+         * config file rather than on the command line so they don't show up
+         * in `ps`; --cacert comes from the same config. -C - resumes like
+         * wget's -c, and --fail turns an HTTP error into a non-zero exit so
+         * the marker logic still works. */
+        snprintf(cmd, sizeof(cmd),
+                 "( (LD_LIBRARY_PATH=/mnt/SDCARD/.tmp_update/lib:/mnt/SDCARD/.tmp_update/lib/parasyte "
+                 "/mnt/SDCARD/.tmp_update/bin/curl -K %s -L -C - --fail --silent --show-error "
+                 "-o %s '%s' && touch %s) || touch %s ) >>log.txt 2>&1 &",
+                 auth_curl_config(), part_q, url, done_q, failed_q);
+        system(cmd);
+        g_state = DOWNLOAD_RUNNING;
+        return;
+    }
 
     /* This device ships BusyBox wget, which supports -c (confirmed: it
      * honours HTTP range requests for resume) but NOT -nv (rejects it as

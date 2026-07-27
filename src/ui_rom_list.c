@@ -211,7 +211,7 @@ static void redraw(void) {
          * previous selection's stale box art and no explanation. */
         lv_label_set_text(g_empty_label,
                           g_filter_active ? "No matching roms" :
-                          g_list.restricted ? "This source now requires\nan archive.org account" :
+                          g_list.restricted ? "Needs an archive.org account.\nSee archive_cookies.txt.example" :
                           (g_list.ok ? "No roms" : "Source unavailable right now"));
         lv_obj_remove_flag(g_empty_label, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(g_thumb_img, LV_OBJ_FLAG_HIDDEN);

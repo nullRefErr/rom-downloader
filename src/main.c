@@ -15,6 +15,7 @@
 #include "net_archive.h"
 #include "net_update.h"
 #include "download_queue.h"
+#include "auth.h"
 
 /* Select button — opens the region/favourites filter overlay on the rom
  * list. This SDL keycode is the reasonable-default assumption for Select on
@@ -139,6 +140,7 @@ int main(int argc, char **argv) {
         logmsg("lvgl_glue_init failed: %s", SDL_GetError());
         return 1;
     }
+    auth_init();   /* optional archive.org cookies, see auth.h */
     queue_reset(); /* once at startup — the queue outlives individual screens */
     logmsg("lvgl init OK");
 

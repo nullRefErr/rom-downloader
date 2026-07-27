@@ -1,0 +1,32 @@
+# archive.org sign-in (optional)
+#
+# Some archive.org sources — the PlayStation one right now — are only served
+# to logged-in accounts. Anonymous downloads from them fail with HTTP 403.
+# To use those sources, put YOUR OWN archive.org session cookies here and
+# rename this file to:  archive_cookies.txt
+#
+# How to get them (do this on a PC, not on the handheld):
+#   1. Log in to archive.org in your browser.
+#   2. Open the browser's developer tools (F12) -> Application/Storage -> Cookies
+#      -> https://archive.org
+#   3. Copy the values of these two cookies:  logged-in-user  and  logged-in-sig
+#   4. Put them below, either on one line or one per line.
+#
+# Example (these are not real values):
+#
+# logged-in-user=you%40example.com
+# logged-in-sig=1234567890abcdef...
+#
+#
+# NOTES, please read:
+#  - Do NOT put your password here. It is not used and would not work.
+#  - The SD card has no file permissions: anyone who takes the card can read
+#    this file. Treat these cookies like a password — they grant access to
+#    your archive.org account until they expire or you log out.
+#  - Logging out of archive.org in your browser invalidates them, which is
+#    also how you revoke them if the card is lost.
+#  - Downloads made with these cookies are tied to your account, the same as
+#    if you downloaded in the browser.
+#  - Connections are verified against the bundled cacert.pem. If that file is
+#    missing, sign-in stays off rather than sending your cookies over an
+#    unverified connection.
