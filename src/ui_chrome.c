@@ -34,18 +34,27 @@ void ui_chrome_build(const char *title, const char *hints) {
 void ui_chrome_refresh_status(void) {
     if (!g_status_label) return;
 
+    /* Two separate readouts, each with its own icon. They used to render as
+     * a Wi-Fi glyph immediately followed by "12.4G (45%)" — the free SD
+     * space — which reads as a connection speed ("12.4 Gbps") rather than
+     * storage, and was reported as "the speed never changes". The SD-card
+     * icon disambiguates it, and the Wi-Fi side now carries a real link
+     * quality that actually moves as the signal changes. */
     int sig = wifi_get_signal();
-    /* green when connected, red when the interface is down / no stats —
-     * a single symbol, not signal bars, keeps it legible at header size */
-    const char *wifi_color = sig >= 0 ? "2ECC40" : "FF4136";
+    char wifi_part[48];
+    if (sig >= 0) {
+        snprintf(wifi_part, sizeof(wifi_part), "#2ECC40 " LV_SYMBOL_WIFI "# %d%%", sig);
+    } else {
+        snprintf(wifi_part, sizeof(wifi_part), "#FF4136 " LV_SYMBOL_WIFI " off#");
+    }
 
     StorageInfo s = storage_get_free_space("/mnt/SDCARD");
-    char text[96];
+    char text[128];
     if (s.ok) {
-        snprintf(text, sizeof(text), "#%s " LV_SYMBOL_WIFI "#  %.1fG (%.0f%%)",
-                 wifi_color, s.free_bytes / (1024.0 * 1024 * 1024), s.free_percent);
+        snprintf(text, sizeof(text), "%s   " LV_SYMBOL_SD_CARD " %.1fG",
+                 wifi_part, s.free_bytes / (1024.0 * 1024 * 1024));
     } else {
-        snprintf(text, sizeof(text), "#%s " LV_SYMBOL_WIFI "#", wifi_color);
+        snprintf(text, sizeof(text), "%s", wifi_part);
     }
     lv_label_set_text(g_status_label, text);
     lv_obj_align(g_status_label, LV_ALIGN_TOP_RIGHT, -8, 6); /* re-align, width changed */
