@@ -5,7 +5,8 @@
 #include <stdio.h>
 
 /* Same "give the user a moment to read it" delay as the download toast. */
-#define RESULT_MS 2500
+#define RESULT_MS 2500      /* success: brief confirmation */
+#define RESULT_FAIL_MS 5000 /* failure: three lines to read, needs longer */
 
 typedef enum { ST_EMAIL, ST_PASSWORD, ST_SUBMIT, ST_RESULT, ST_CLOSING } LoginStep;
 
@@ -18,6 +19,7 @@ static lv_obj_t *g_kb;
 static lv_obj_t *g_status;
 static LoginStep g_step;
 static uint32_t g_result_tick;
+static bool g_result_ok;
 static uint32_t g_kb_last_sel = LV_BUTTONMATRIX_BUTTON_NONE;
 
 /* Same reason as everywhere else in this app: the focused key's default
@@ -99,6 +101,8 @@ void ui_login_open(lv_group_t *restore_group) {
     g_status = lv_label_create(g_overlay);
     lv_obj_set_style_text_font(g_status, &lv_font_montserrat_14, 0);
     lv_obj_set_width(g_status, LV_PCT(94));
+    lv_label_set_long_mode(g_status, LV_LABEL_LONG_MODE_WRAP);
+    lv_obj_set_style_text_align(g_status, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_align(g_status, LV_ALIGN_TOP_MID, 0, 104);
     set_status("Enter your email, then press the check key. B cancels.", 0x888888);
 
@@ -156,13 +160,28 @@ void ui_login_tick(void) {
         /* Clear the password from the widget as soon as it has been used. */
         lv_textarea_set_text(g_pass_ta, "");
 
-        set_status(res.message, res.ok ? 0x2ecc40 : 0xff4136);
+        g_result_ok = res.ok;
+        if (res.ok) {
+            set_status(res.message, 0x2ecc40);
+        } else {
+            /* Don't leave a failure as a dead end. archive.org accounts are
+             * email+password (it offers no Google/Apple sign-in), so the
+             * usual cause is a typo — but an account with two-factor auth
+             * can't work through this endpoint at all, and for those the
+             * browser-cookie route is the way through. Say so here rather
+             * than making the user go looking. */
+            char msg[256]; /* res.message is 96; the hint adds ~75 */
+            snprintf(msg, sizeof(msg), "%s\nIf your account uses 2-step verification,\nsee archive_cookies.txt.example on the card.",
+                     res.message);
+            set_status(msg, 0xff4136);
+        }
         g_step = ST_RESULT;
         g_result_tick = lv_tick_get();
         return;
     }
 
-    if (g_step == ST_RESULT && lv_tick_elaps(g_result_tick) >= RESULT_MS) {
+    if (g_step == ST_RESULT &&
+        lv_tick_elaps(g_result_tick) >= (g_result_ok ? RESULT_MS : RESULT_FAIL_MS)) {
         g_step = ST_CLOSING;
     }
     if (g_step == ST_CLOSING) close_now();
