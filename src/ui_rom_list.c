@@ -7,6 +7,7 @@
 #include "download_queue.h"
 #include "favorites.h"
 #include "filter.h"
+#include "ui_login.h"
 #include <stdio.h>
 #include <stdbool.h>
 #include <string.h>
@@ -211,7 +212,7 @@ static void redraw(void) {
          * previous selection's stale box art and no explanation. */
         lv_label_set_text(g_empty_label,
                           g_filter_active ? "No matching roms" :
-                          g_list.restricted ? "Needs an archive.org account.\nSee archive_cookies.txt.example" :
+                          g_list.restricted ? "Needs an archive.org account.\nPress A to sign in." :
                           (g_list.ok ? "No roms" : "Source unavailable right now"));
         lv_obj_remove_flag(g_empty_label, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(g_thumb_img, LV_OBJ_FLAG_HIDDEN);
@@ -643,7 +644,12 @@ static void key_event_cb(lv_event_t *e) {
             g_on_back();
         }
     } else if (key == LV_KEY_ENTER) {
-        if (count > 0) {
+        if (count == 0 && g_list.restricted) {
+            /* The wall the user just hit — offer the fix right here rather
+             * than hiding sign-in behind a settings screen they'd have to
+             * know about. */
+            ui_login_open(g_group);
+        } else if (count > 0) {
             int idx = eff_data_idx(g_selected);
             if (!download_file_exists(g_roms_dir, display_name(g_list.items[idx].name))) {
                 open_download_confirm();

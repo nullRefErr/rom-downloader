@@ -16,6 +16,7 @@
 #include "net_update.h"
 #include "download_queue.h"
 #include "auth.h"
+#include "ui_login.h"
 
 /* Select button — opens the region/favourites filter overlay on the rom
  * list. This SDL keycode is the reasonable-default assumption for Select on
@@ -182,7 +183,8 @@ int main(int argc, char **argv) {
                          * on-screen keyboard's own tiny backspace key by
                          * D-pad felt too tedious (reported directly) — Y
                          * doubles as a direct backspace shortcut instead. */
-                        if (ui_rom_list_search_is_open()) ui_rom_list_search_backspace();
+                        if (ui_login_is_open()) ui_login_backspace();
+                        else if (ui_rom_list_search_is_open()) ui_rom_list_search_backspace();
                         else ui_rom_list_open_search();
                     }
                     if (kc == SDLK_LSHIFT && g_screen == SCREEN_ROM_LIST) { /* X */
@@ -203,6 +205,7 @@ int main(int argc, char **argv) {
          * transition. The queue is empty during the startup update prompt
          * anyway, but gating it here keeps that guarantee explicit. */
         if (g_screen != SCREEN_UPDATE) queue_tick();
+        ui_login_tick();
         if (g_screen == SCREEN_ROM_LIST) ui_rom_list_tick();
         if (g_screen == SCREEN_UPDATE) {
             UiUpdateStatus st = ui_update_tick();
