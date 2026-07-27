@@ -8,8 +8,6 @@
 #define COOKIE_FILE "archive_cookies.txt"
 #define CA_BUNDLE   "cacert.pem"
 #define XAUTHN_URL  "https://archive.org/services/xauthn/?op=login"
-#define CURL_BIN    "/mnt/SDCARD/.tmp_update/bin/curl"
-#define CURL_LIBS   "/mnt/SDCARD/.tmp_update/lib:/mnt/SDCARD/.tmp_update/lib/parasyte"
 
 /* The credentials must not appear in the command line — anything there is
  * readable by every other process via ps. curl's --data @file reads the POST
@@ -62,11 +60,28 @@ static char *run_capture(const char *cmd) {
     return buf;
 }
 
+/* XAuthN hands back a full Set-Cookie string, not a bare value, e.g.
+ *   "you%40example.com; expires=Tue, 27-Jul-2027 ...; path=/; domain=.archive.org"
+ * Storing that whole thing as the cookie value would produce a malformed
+ * cookie header, so keep only the part before the first ';'. */
+static void cookie_value_only(const char *in, char *out, size_t outsz) {
+    size_t o = 0;
+    while (in[o] && in[o] != ';' && o + 1 < outsz) {
+        out[o] = in[o];
+        o++;
+    }
+    out[o] = '\0';
+}
+
 static bool write_cookies(const char *user, const char *sig) {
+    char u[512], s[512];
+    cookie_value_only(user, u, sizeof(u));
+    cookie_value_only(sig, s, sizeof(s));
+
     FILE *f = fopen(COOKIE_FILE, "w");
     if (!f) return false;
-    fprintf(f, "logged-in-user=%s\n", user);
-    fprintf(f, "logged-in-sig=%s\n", sig);
+    fprintf(f, "logged-in-user=%s\n", u);
+    fprintf(f, "logged-in-sig=%s\n", s);
     fclose(f);
     return true;
 }
@@ -100,13 +115,21 @@ LoginResult net_login(const char *email, const char *password) {
     fprintf(body, "email=%s&password=%s", email_enc, pass_enc);
     fclose(body);
 
-    char cmd[512];
+    char cmd[768]; /* the full library path is long */
     snprintf(cmd, sizeof(cmd),
              "LD_LIBRARY_PATH=%s %s -s --max-time 30 --cacert %s "
-             "--data @%s '%s' 2>/dev/null",
-             CURL_LIBS, CURL_BIN, CA_BUNDLE, POST_BODY_FILE, XAUTHN_URL);
+             "--data @%s '%s' 2>>log.txt",
+             CURL_LD_PATH, CURL_BIN_PATH, CA_BUNDLE, POST_BODY_FILE, XAUTHN_URL);
     char *json = run_capture(cmd);
     remove(POST_BODY_FILE); /* the password never outlives the request */
+
+    {   /* record what actually came back, without ever logging the body */
+        FILE *lf = fopen("log.txt", "a");
+        if (lf) {
+            fprintf(lf, "login: curl returned %d bytes\n", json ? (int)strlen(json) : -1);
+            fclose(lf);
+        }
+    }
 
     if (!json || !*json) {
         free(json);

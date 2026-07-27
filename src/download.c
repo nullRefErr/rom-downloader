@@ -126,8 +126,8 @@ static void begin_download(const char *url, const char *dest_dir,
          * wget's -c, and --fail turns an HTTP error into a non-zero exit so
          * the marker logic still works. */
         snprintf(cmd, sizeof(cmd),
-                 "( (LD_LIBRARY_PATH=/mnt/SDCARD/.tmp_update/lib:/mnt/SDCARD/.tmp_update/lib/parasyte "
-                 "/mnt/SDCARD/.tmp_update/bin/curl -K %s -L -C - --fail --silent --show-error "
+                 "( (LD_LIBRARY_PATH=" CURL_LD_PATH " " CURL_BIN_PATH
+                 " -K %s -L -C - --fail --silent --show-error "
                  "-o %s '%s' && touch %s) || touch %s ) >>log.txt 2>&1 &",
                  auth_curl_config(), part_q, url, done_q, failed_q);
         system(cmd);

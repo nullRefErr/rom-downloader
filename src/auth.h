@@ -18,6 +18,20 @@
  * run with verification disabled, which is not acceptable for a request
  * carrying someone's session. */
 
+/* Library path curl needs when spawned from inside the app.
+ *
+ * curl links against SigmaStar vendor libraries (libmi_common.so and
+ * friends) that live in /config/lib, plus libcurl in .tmp_update/lib. A
+ * shell gets these from the system default; the app does not, because
+ * setting LD_LIBRARY_PATH on the command REPLACES the inherited value —
+ * which is why curl failed with "error while loading shared libraries" from
+ * inside the app while the identical command worked over SSH. Spelled out in
+ * full here, and the inherited value is still appended so anything the
+ * firmware adds is kept. */
+#define CURL_LD_PATH "/lib:/config/lib:/mnt/SDCARD/miyoo/lib:" \
+                     "/mnt/SDCARD/.tmp_update/lib:/mnt/SDCARD/.tmp_update/lib/parasyte:$LD_LIBRARY_PATH"
+#define CURL_BIN_PATH "/mnt/SDCARD/.tmp_update/bin/curl"
+
 /* Reads the cookie file and prepares the curl config. Call once at startup. */
 void auth_init(void);
 
