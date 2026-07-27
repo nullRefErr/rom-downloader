@@ -64,6 +64,36 @@ RomList net_archive_fetch(const char *identifier, const char *ext) {
     free(json);
     if (!root) return result; /* ok=0: unparseable response */
 
+    /* archive.org can move an item into its "logged-in users only" access
+     * tier: metadata (and therefore the file list) stays public, but every
+     * actual download answers 401 Unauthorized. That's exactly what happened
+     * to the PlayStation source — the app happily listed thousands of roms
+     * that could never be fetched, and each attempt surfaced only a generic
+     * "Download failed". Detect it here, at the fetch, so the UI can say what
+     * is really wrong; the marker is membership of the "loggedin" collection
+     * (verified: the restricted PS item has it, every working source does
+     * not). Checked before files[] so it reports even when both apply. */
+    cJSON *meta = cJSON_GetObjectItemCaseSensitive(root, "metadata");
+    cJSON *collection = meta ? cJSON_GetObjectItemCaseSensitive(meta, "collection") : NULL;
+    if (cJSON_IsString(collection) && collection->valuestring) {
+        if (strcmp(collection->valuestring, "loggedin") == 0) result.restricted = 1;
+    } else if (cJSON_IsArray(collection)) {
+        cJSON *c;
+        cJSON_ArrayForEach(c, collection) {
+            if (cJSON_IsString(c) && c->valuestring && strcmp(c->valuestring, "loggedin") == 0) {
+                result.restricted = 1;
+                break;
+            }
+        }
+    }
+
+    if (result.restricted) {
+        /* Deliberately do NOT return the file list: every one of those
+         * downloads would 401, so listing them only invites failures. */
+        cJSON_Delete(root);
+        return result; /* ok=0, restricted=1 */
+    }
+
     cJSON *files = cJSON_GetObjectItemCaseSensitive(root, "files");
     if (!cJSON_IsArray(files)) {
         /* dark or flagged item: archive.org omits "files" entirely rather

@@ -87,10 +87,23 @@ static void begin_download(const char *url, const char *dest_dir,
     snprintf(g_roms_dir, sizeof(g_roms_dir), "%s", dest_dir);
 
     mkdir(dest_dir, 0755); /* ignore EEXIST — Roms/<CODE> should already exist, belt and suspenders */
-    /* Deliberately NOT removing g_part_path: a leftover .part from an
-     * interrupted attempt (wifi drop, app killed) is exactly what `wget -c`
+    /* Deliberately NOT removing g_part_path in general: a leftover .part from
+     * an interrupted attempt (wifi drop, app killed) is exactly what `wget -c`
      * resumes from, so keeping it is the whole point of the resume feature.
-     * Markers are still cleared — they're per-attempt signals. */
+     * Markers are still cleared — they're per-attempt signals.
+     *
+     * The exception: a .part that is ALREADY at/past the expected size can
+     * only make `wget -c` ask for a range starting at or beyond EOF, which
+     * archive.org answers with 416, and BusyBox wget treats any 416 as a hard
+     * error. That wedges the rom into a permanent "Download failed" loop with
+     * no way out from the UI, since the "already downloaded" check only ever
+     * stats the FINAL name and nothing else deletes a .part. Reachable
+     * whenever the app is quit mid-transfer: the wget was backgrounded, so it
+     * keeps running to completion and leaves a full-size .part behind. */
+    if (expected_size > 0) {
+        long part = file_size(g_part_path);
+        if (part > 0 && (unsigned long)part >= expected_size) remove(g_part_path);
+    }
     remove(g_done_marker);
     remove(g_failed_marker);
 
@@ -147,6 +160,23 @@ DownloadState download_poll(float *out_progress) {
     if (done) {
         fclose(done);
         remove(g_done_marker);
+
+        /* Only accept the transfer if it's actually the size archive.org
+         * advertised. Resuming means the .part may carry bytes from an
+         * earlier, different version of the file (archive.org re-derives
+         * CHDs), in which case wget still stops at content-length and exits
+         * 0 — renaming that to the final name would report "Downloaded" for
+         * a corrupt rom. Drop the bad .part so a retry starts clean.
+         * Skipped when the size is unknown (expected_size == 0). */
+        long got = file_size(g_part_path);
+        if (g_expected_size > 0 && (got < 0 || (unsigned long)got != g_expected_size)) {
+            dlog("download: size mismatch for %s (got %ld, expected %lu) — discarding",
+                 g_final_path, got, g_expected_size);
+            remove(g_part_path);
+            g_state = DOWNLOAD_FAILED;
+            return g_state;
+        }
+
         rename(g_part_path, g_final_path);
 
         dlog("download: complete, saved to %s", g_final_path);

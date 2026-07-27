@@ -211,6 +211,7 @@ static void redraw(void) {
          * previous selection's stale box art and no explanation. */
         lv_label_set_text(g_empty_label,
                           g_filter_active ? "No matching roms" :
+                          g_list.restricted ? "This source now requires\nan archive.org account" :
                           (g_list.ok ? "No roms" : "Source unavailable right now"));
         lv_obj_remove_flag(g_empty_label, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(g_thumb_img, LV_OBJ_FLAG_HIDDEN);
@@ -687,6 +688,8 @@ void ui_rom_list_build(lv_group_t *group, const EmuEntry *emu, RomList list,
     char header[80];
     if (g_list.ok) {
         snprintf(header, sizeof(header), "%s", emu->label);
+    } else if (g_list.restricted) {
+        snprintf(header, sizeof(header), "%s (account required)", emu->label);
     } else {
         snprintf(header, sizeof(header), "%s (source unavailable)", emu->label);
     }

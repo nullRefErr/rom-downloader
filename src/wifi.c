@@ -53,23 +53,33 @@ static int to_percent(int qual, int level) {
  * fails to convert, and the interface is skipped entirely — which showed up
  * as a false "offline" while actually connected. The quality field carries a
  * trailing updated-flag char ('.'), eaten with %*c. */
-static int link_strength(const char *proc_path) {
+static int link_strength(const char *proc_path, const char *iface) {
     FILE *f = fopen(proc_path, "r");
     if (!f) return -1;
 
     char line[256];
     int strength = -1;
+    size_t ilen = strlen(iface);
     while (fgets(line, sizeof(line), f)) {
         char *colon = strchr(line, ':');
         if (!colon) continue;
+        /* Match the interface by NAME rather than taking the first row: this
+         * device really does list two (wlan0 associated, wlan1 idle at
+         * quality 0), so "first row wins" would report the dead one as soon
+         * as the kernel happened to order them the other way — a false
+         * offline while actually connected. */
+        const char *name = line;
+        while (*name == ' ' || *name == '\t') name++;
+        if ((size_t)(colon - name) != ilen || strncmp(name, iface, ilen) != 0) continue;
+
         unsigned status;
         int qual, level;
         int n = sscanf(colon + 1, "%x %d%*c %d", &status, &qual, &level);
         if (n >= 2) {
             (void)status;
             strength = to_percent(qual, n >= 3 ? level : 0);
-            break;
         }
+        break;
     }
     fclose(f);
     return strength;
@@ -78,7 +88,7 @@ static int link_strength(const char *proc_path) {
 /* Split out so the parsing/decision logic can be exercised against fixture
  * files in a self-check without touching the real /proc and /sys. */
 int wifi_signal_from(const char *operstate_path, const char *carrier_path,
-                      const char *wireless_path) {
+                      const char *wireless_path, const char *iface) {
     /* The load-bearing fix: an interface that exists but is switched off
      * KEEPS its /proc/net/wireless row, just with zeroed quality (the kernel
      * prints it from a zeroed nullstats struct). The old "a row exists =>
@@ -102,7 +112,7 @@ int wifi_signal_from(const char *operstate_path, const char *carrier_path,
         return -1;
     }
 
-    int strength = link_strength(wireless_path);
+    int strength = link_strength(wireless_path, iface);
     if (strength <= 0) return -1; /* no interface row, or associated with nothing */
     return strength;
 }
@@ -110,5 +120,5 @@ int wifi_signal_from(const char *operstate_path, const char *carrier_path,
 int wifi_get_signal(void) {
     return wifi_signal_from("/sys/class/net/wlan0/operstate",
                             "/sys/class/net/wlan0/carrier",
-                            "/proc/net/wireless");
+                            "/proc/net/wireless", "wlan0");
 }

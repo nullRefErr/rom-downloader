@@ -9,7 +9,10 @@ typedef struct {
 typedef struct {
     RomEntry *items;
     int count;
-    int ok; /* 0: fetch failed, or the source has no files[] (dark/flagged item) */
+    int ok;         /* 0: fetch failed, or the source has no files[] (dark/flagged item) */
+    int restricted; /* 1: the item is listable but archive.org only serves its files to
+                     * logged-in accounts, so every download would 401. Distinct from
+                     * ok==0 so the UI can say why instead of "source unavailable". */
 } RomList;
 
 /* Fetches https://archive.org/metadata/{identifier} via the system `wget`
