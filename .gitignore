@@ -7,3 +7,4 @@
 # never commit real archive.org session cookies or the generated curl config
 /package/App/RomDownloader/archive_cookies.txt
 /package/App/RomDownloader/.curl_auth.cfg
+/package/App/RomDownloader/.env

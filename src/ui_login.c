@@ -2,6 +2,7 @@
 #include "ui_chrome.h"
 #include "lvgl_glue.h"
 #include "net_login.h"
+#include "env.h"
 #include <stdio.h>
 
 /* Same "give the user a moment to read it" delay as the download toast. */
@@ -155,13 +156,20 @@ void ui_login_tick(void) {
         set_status("Signing in...", 0xffffff);
         lvgl_glue_force_redraw();
 
-        LoginResult res = net_login(lv_textarea_get_text(g_email_ta),
-                                    lv_textarea_get_text(g_pass_ta));
+        char email[256], password[256];
+        snprintf(email, sizeof(email), "%s", lv_textarea_get_text(g_email_ta));
+        snprintf(password, sizeof(password), "%s", lv_textarea_get_text(g_pass_ta));
+
+        LoginResult res = net_login(email, password);
         /* Clear the password from the widget as soon as it has been used. */
         lv_textarea_set_text(g_pass_ta, "");
 
         g_result_ok = res.ok;
         if (res.ok) {
+            /* Remember the credentials so the session can be renewed without
+             * retyping when the cookies eventually expire. Plain text on the
+             * card — see env.h for why that trade is being made. */
+            env_save(email, password);
             set_status(res.message, 0x2ecc40);
         } else {
             /* Don't leave a failure as a dead end. archive.org accounts are

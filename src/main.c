@@ -17,6 +17,8 @@
 #include "download_queue.h"
 #include "auth.h"
 #include "ui_login.h"
+#include "env.h"
+#include "net_login.h"
 
 /* Select button — opens the region/favourites filter overlay on the rom
  * list. This SDL keycode is the reasonable-default assumption for Select on
@@ -66,7 +68,7 @@ static void on_emu_selected(const EmuEntry *emu) {
 
     logmsg("fetching %s (%s.%s)...", emu->code, emu->archive_id, emu->ext);
     RomList list = net_archive_fetch(emu->archive_id, emu->ext);
-    logmsg("fetch done: ok=%d count=%d", list.ok, list.count);
+    logmsg("fetch done: ok=%d count=%d restricted=%d", list.ok, list.count, list.restricted);
 
     lv_obj_clean(lv_screen_active());
     ui_rom_list_build(g_group, emu, list, on_back_to_emu_select);
@@ -157,6 +159,24 @@ int main(int argc, char **argv) {
     lvgl_glue_force_redraw();
     SDL_Delay(1200);
     lv_obj_clean(lv_screen_active());
+
+    /* If credentials were left in .env, establish the session before the user
+     * goes looking for a restricted source, so it just works. Only when there
+     * is no usable session already — a stored cookie is preferred and costs
+     * nothing, this path is the renewal for when it has expired. */
+    if (!auth_available() && env_exists()) {
+        char email[256], password[256];
+        if (env_load(email, sizeof(email), password, sizeof(password))) {
+            lv_obj_t *note = lv_label_create(lv_screen_active());
+            lv_obj_set_style_text_color(note, lv_color_hex(0xffffff), 0);
+            lv_label_set_text(note, "Signing in to archive.org...");
+            lv_obj_center(note);
+            lvgl_glue_force_redraw();
+            LoginResult lr = net_login(email, password);
+            logmsg("env sign-in: ok=%d (%s)", lr.ok, lr.message);
+            lv_obj_clean(lv_screen_active());
+        }
+    }
 
     show_update_check();
     logmsg("update check / emu select screen built OK");

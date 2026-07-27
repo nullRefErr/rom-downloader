@@ -644,10 +644,18 @@ static void key_event_cb(lv_event_t *e) {
             g_on_back();
         }
     } else if (key == LV_KEY_ENTER) {
+        {   /* temporary diagnostic: which branch does A take here? */
+            FILE *lf = fopen("log.txt", "a");
+            if (lf) { fprintf(lf, "romlist: ENTER count=%d restricted=%d\n", count, g_list.restricted); fclose(lf); }
+        }
         if (count == 0 && g_list.restricted) {
             /* The wall the user just hit — offer the fix right here rather
              * than hiding sign-in behind a settings screen they'd have to
              * know about. */
+            {
+                FILE *lf = fopen("log.txt", "a");
+                if (lf) { fprintf(lf, "romlist: opening sign-in\n"); fclose(lf); }
+            }
             ui_login_open(g_group);
         } else if (count > 0) {
             int idx = eff_data_idx(g_selected);
