@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.4.0
+
+- **archive.org sign-in.** Some sources (PlayStation right now) are only served to logged-in accounts, so anonymous downloads failed with a bare "Download failed". You can now sign in with your own account from inside the app, and the app says plainly when a source needs one. Credentials can also be left in a `.env` file so the session renews itself; see `.env.example` — note it stores your password in plain text on the card, and the cookie-only route in `archive_cookies.txt.example` stays the safer option.
+- **Wi-Fi indicator actually reflects the connection.** It previously showed connected at all times, because a switched-off interface keeps its status entry with zeroed values. It now reports the real state and a link strength that moves with the signal, and free SD space has its own icon so it no longer reads as a connection speed.
+- Downloads that were interrupted no longer get stuck failing forever, and a resumed file is checked against its expected size before being accepted, so a partial transfer can't be reported as a finished rom.
+- Failures now record the actual reason to `log.txt` instead of being silently discarded.
+
 ## v1.3.3
 
 - **Auto-update now actually installs.** The updater downloaded the new build fine but couldn't swap it in — the SD card is FAT32, which can't replace a running executable in place, so the install step failed ("Update failed"). The new binary is now staged and swapped in by `launch.sh` on the next start, when nothing is running it.
