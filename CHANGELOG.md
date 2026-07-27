@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.5.0
+
+- **Navigation sounds.** Button presses now play the same click the rest of the system uses. Nothing extra is bundled — it reuses Onion's own sound — and your volume setting is preserved.
+- **Hold the d-pad to scroll.** Holding a direction now keeps moving instead of stepping once. Only directions repeat, so a held A can't start a pile of downloads.
+- **Nintendo DS added.** Note this source is a small user-uploaded set (~48 titles) rather than a full catalogue like the other systems, so names are inconsistent and box art will often be missing.
+
 ## v1.4.0
 
 - **archive.org sign-in.** Some sources (PlayStation right now) are only served to logged-in accounts, so anonymous downloads failed with a bare "Download failed". You can now sign in with your own account from inside the app, and the app says plainly when a source needs one. Credentials can also be left in a `.env` file so the session renews itself; see `.env.example` — note it stores your password in plain text on the card, and the cookie-only route in `archive_cookies.txt.example` stays the safer option.
