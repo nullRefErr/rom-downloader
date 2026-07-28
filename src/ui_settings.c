@@ -26,6 +26,7 @@ static int g_selected;
 static uint32_t g_status_tick;
 static bool g_status_showing;
 static bool g_rebuild_pending; /* language changed: rebuild outside the event handler */
+static bool g_back_pending;    /* leaving: same, see key_event_cb */
 
 static void format_size(unsigned long long bytes, char *out, size_t outsz) {
     if (bytes >= 1024ULL * 1024 * 1024) snprintf(out, outsz, "%.1f GB", bytes / (1024.0 * 1024 * 1024));
@@ -131,7 +132,13 @@ static void key_event_cb(lv_event_t *e) {
     } else if (key == LV_KEY_ENTER) {
         activate();
     } else if (key == LV_KEY_ESC) {
-        if (g_on_back) g_on_back();
+        /* Deferred like every other teardown here: going back tears this
+         * screen down, and doing that from inside its own key event leaves
+         * LVGL dispatching against objects we just freed. The visible
+         * symptom was the previous screen's footer surviving the rebuild,
+         * so the main menu kept showing hints in the old language after a
+         * language change. */
+        g_back_pending = true;
     }
 }
 
@@ -140,6 +147,7 @@ void ui_settings_build(lv_group_t *group, ui_settings_back_cb_t on_back) {
     g_on_back = on_back;
     g_status_showing = false;
     g_rebuild_pending = false;
+    g_back_pending = false;
 
     ui_chrome_build(T("settings_title"), T("hint_settings"));
 
@@ -180,6 +188,11 @@ void ui_settings_build(lv_group_t *group, ui_settings_back_cb_t on_back) {
 }
 
 void ui_settings_tick(void) {
+    if (g_back_pending) {
+        g_back_pending = false;
+        if (g_on_back) g_on_back();
+        return;
+    }
     if (g_rebuild_pending) {
         g_rebuild_pending = false;
         int keep = g_selected;

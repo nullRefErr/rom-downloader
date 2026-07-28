@@ -96,6 +96,7 @@ static void on_emu_selected(const EmuEntry *emu) {
 static void show_emu_select(void) {
     ui_emu_select_build(g_group, on_emu_selected);
     g_screen = SCREEN_EMU_SELECT;
+    logmsg("emu select built, lang=%s hint=\"%s\"", settings_get()->lang, T("hint_emu_select"));
 }
 
 static void on_settings_back(void) {

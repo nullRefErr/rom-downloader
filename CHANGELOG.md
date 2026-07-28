@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.6.1
+
+- Fixed the button hints at the bottom of the system list keeping the previous language after changing it in settings. Leaving settings tore the screen down from inside its own key handler, so the old labels survived the rebuild.
+
 ## v1.6.0
 
 - **Settings screen**, opened with Select from the system list, and everything in it is remembered across restarts.
