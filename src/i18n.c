@@ -1,5 +1,6 @@
 #include "i18n.h"
 #include "cJSON.h"
+#include "i18n_fallback.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -71,6 +72,11 @@ const char *T(const char *key) {
         cJSON *v = cJSON_GetObjectItemCaseSensitive(g_fallback, key);
         if (cJSON_IsString(v) && v->valuestring) return v->valuestring;
     }
+    /* No lang.json at all (e.g. updated in-app from a build that predates it):
+     * fall back to the English compiled into the binary rather than showing
+     * the user raw keys. */
+    const char *builtin = i18n_fallback(key);
+    if (builtin) return builtin;
     return key;
 }
 

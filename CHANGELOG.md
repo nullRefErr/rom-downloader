@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.6.0
+
+- **Settings screen**, opened with Select from the system list, and everything in it is remembered across restarts.
+- **Five languages**: English, German, French, Japanese and Turkish. Switching takes effect immediately, no restart. Translations live in `lang.json` on the card, so wording can be fixed without a rebuild.
+- **Navigation sounds can be turned off.**
+- **archive.org account** is shown in settings, with sign in / sign out.
+- **Clear unfinished downloads**: removes leftover partial files and reports the space recovered. These build up because an interrupted download keeps its partial file so it can resume, and an abandoned one holds onto that space silently.
+
 ## v1.5.0
 
 - **Navigation sounds.** Button presses now play the same click the rest of the system uses. Nothing extra is bundled — it reuses Onion's own sound — and your volume setting is preserved.

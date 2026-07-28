@@ -16,7 +16,11 @@ void ui_style_init(void) {
     lv_style_set_bg_color(&style_row, lv_color_hex(0x000000));
     lv_style_set_bg_opa(&style_row, LV_OPA_COVER);
     lv_style_set_text_color(&style_row, lv_color_hex(0xffffff));
-    lv_style_set_text_font(&style_row, &lv_font_montserrat_22);
+    /* Must be one of the generated ui fonts: this style is applied to every
+     * list row, so pinning it to the stock ASCII-only face made accented and
+     * Japanese text render as boxes in the rows while the rest of the screen
+     * was fine — the row style silently overrode LV_FONT_DEFAULT. */
+    lv_style_set_text_font(&style_row, &lv_font_ui_22);
     lv_style_set_border_width(&style_row, 1);
     lv_style_set_border_color(&style_row, lv_color_hex(0x333333));
     lv_style_set_radius(&style_row, 0);
