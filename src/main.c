@@ -19,6 +19,9 @@
 #include "ui_login.h"
 #include "env.h"
 #include "sound.h"
+#include "ui_settings.h"
+#include "i18n.h"
+#include "settings.h"
 #include "net_login.h"
 
 /* Select button — opens the region/favourites filter overlay on the rom
@@ -45,7 +48,7 @@ static bool key_repeats(SDL_Keycode k) {
 static FILE *g_log;
 static lv_group_t *g_group;
 
-typedef enum { SCREEN_UPDATE, SCREEN_EMU_SELECT, SCREEN_ROM_LIST } Screen;
+typedef enum { SCREEN_UPDATE, SCREEN_EMU_SELECT, SCREEN_ROM_LIST, SCREEN_SETTINGS } Screen;
 static Screen g_screen;
 
 static void logmsg(const char *fmt, ...) {
@@ -76,7 +79,7 @@ static void on_emu_selected(const EmuEntry *emu) {
     lv_obj_t *loading = lv_label_create(lv_screen_active());
     lv_obj_set_style_text_color(loading, lv_color_hex(0xffffff), 0);
     char buf[64];
-    snprintf(buf, sizeof(buf), "Loading %s...", emu->label);
+    snprintf(buf, sizeof(buf), T("loading_fmt"), emu->label);
     lv_label_set_text(loading, buf);
     lv_obj_center(loading);
     lvgl_glue_force_redraw();
@@ -95,6 +98,17 @@ static void show_emu_select(void) {
     g_screen = SCREEN_EMU_SELECT;
 }
 
+static void on_settings_back(void) {
+    lv_obj_clean(lv_screen_active());
+    show_emu_select(); /* rebuilt, so a language change taken in settings shows here */
+}
+
+static void show_settings(void) {
+    lv_obj_clean(lv_screen_active());
+    ui_settings_build(g_group, on_settings_back);
+    g_screen = SCREEN_SETTINGS;
+}
+
 /* Blocking GitHub Releases check (small JSON response, 5s timeout ceiling
  * inside net_update_check) — same "Loading..." pattern as
  * on_emu_selected()'s archive.org fetch. Skips straight to the emulator
@@ -105,7 +119,7 @@ static void show_update_check(void) {
     lv_obj_set_style_bg_opa(lv_screen_active(), LV_OPA_COVER, 0);
     lv_obj_t *checking = lv_label_create(lv_screen_active());
     lv_obj_set_style_text_color(checking, lv_color_hex(0xffffff), 0);
-    lv_label_set_text(checking, "Checking for updates...");
+    lv_label_set_text(checking, T("checking_updates"));
     lv_obj_center(checking);
     lvgl_glue_force_redraw();
 
@@ -158,6 +172,8 @@ int main(int argc, char **argv) {
         logmsg("lvgl_glue_init failed: %s", SDL_GetError());
         return 1;
     }
+    settings_load();
+    i18n_load(settings_get()->lang);
     auth_init();   /* optional archive.org cookies, see auth.h */
     queue_reset(); /* once at startup — the queue outlives individual screens */
     logmsg("lvgl init OK");
@@ -167,8 +183,8 @@ int main(int argc, char **argv) {
     lv_obj_set_style_bg_opa(lv_screen_active(), LV_OPA_COVER, 0);
     lv_obj_t *splash = lv_label_create(lv_screen_active());
     lv_obj_set_style_text_color(splash, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(splash, &lv_font_montserrat_24, 0);
-    lv_label_set_text(splash, "Rom Downloader\nBy AEY");
+    lv_obj_set_style_text_font(splash, &lv_font_ui_24, 0);
+    lv_label_set_text(splash, T("splash"));
     lv_obj_set_style_text_align(splash, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_center(splash);
     lvgl_glue_force_redraw();
@@ -186,7 +202,7 @@ int main(int argc, char **argv) {
         if (env_load(email, sizeof(email), password, sizeof(password))) {
             lv_obj_t *note = lv_label_create(lv_screen_active());
             lv_obj_set_style_text_color(note, lv_color_hex(0xffffff), 0);
-            lv_label_set_text(note, "Signing in to archive.org...");
+            lv_label_set_text(note, T("signing_in_startup"));
             lv_obj_center(note);
             lvgl_glue_force_redraw();
             LoginResult lr = net_login(email, password);
@@ -240,8 +256,9 @@ int main(int argc, char **argv) {
                         if (ui_login_is_open()) ui_login_clear_field();
                         else if (g_screen == SCREEN_ROM_LIST) ui_rom_list_toggle_favorite();
                     }
-                    if (kc == KEY_SELECT && g_screen == SCREEN_ROM_LIST) { /* Select */
-                        ui_rom_list_open_filter();
+                    if (kc == KEY_SELECT) { /* Select */
+                        if (g_screen == SCREEN_ROM_LIST) ui_rom_list_open_filter();
+                        else if (g_screen == SCREEN_EMU_SELECT) show_settings();
                     }
                 }
                 lvgl_glue_feed_key(kc, pressed);
@@ -269,6 +286,7 @@ int main(int argc, char **argv) {
         if (g_screen != SCREEN_UPDATE) queue_tick();
         ui_login_tick();
         if (g_screen == SCREEN_ROM_LIST) ui_rom_list_tick();
+        if (g_screen == SCREEN_SETTINGS) ui_settings_tick();
         if (g_screen == SCREEN_UPDATE) {
             UiUpdateStatus st = ui_update_tick();
             if (st == UI_UPDATE_FINISHED) {

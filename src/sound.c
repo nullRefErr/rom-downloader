@@ -1,4 +1,5 @@
 #include "sound.h"
+#include "settings.h"
 #include <SDL2/SDL.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -123,6 +124,7 @@ void sound_init(void) {
 
 void sound_click(void) {
     if (!g_dev || !g_click) return;
+    if (!settings_get()->sound) return;
     /* A held d-pad repeats faster than the ~70ms clip, and without this the
      * queue backs up and the click smears into a drone. */
     if (SDL_GetQueuedAudioSize(g_dev) >= g_click_len) return;

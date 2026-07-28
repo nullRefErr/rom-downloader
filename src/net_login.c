@@ -1,4 +1,5 @@
 #include "net_login.h"
+#include "i18n.h"
 #include "auth.h"
 #include "cJSON.h"
 #include <stdio.h>
@@ -90,7 +91,7 @@ LoginResult net_login(const char *email, const char *password) {
     LoginResult r = {0};
 
     if (!email || !*email || !password || !*password) {
-        snprintf(r.message, sizeof(r.message), "Enter email and password");
+        snprintf(r.message, sizeof(r.message), "%s", T("login_need_fields"));
         return r;
     }
     /* Without the CA bundle the request could only go out with certificate
@@ -98,7 +99,7 @@ LoginResult net_login(const char *email, const char *password) {
      * send over an unverified connection. */
     FILE *ca = fopen(CA_BUNDLE, "r");
     if (!ca) {
-        snprintf(r.message, sizeof(r.message), "Missing cacert.pem - cannot sign in safely");
+        snprintf(r.message, sizeof(r.message), "%s", T("login_no_cacert"));
         return r;
     }
     fclose(ca);
@@ -109,7 +110,7 @@ LoginResult net_login(const char *email, const char *password) {
 
     FILE *body = fopen(POST_BODY_FILE, "w");
     if (!body) {
-        snprintf(r.message, sizeof(r.message), "Could not prepare sign-in request");
+        snprintf(r.message, sizeof(r.message), "%s", T("login_no_prepare"));
         return r;
     }
     fprintf(body, "email=%s&password=%s", email_enc, pass_enc);
@@ -133,14 +134,14 @@ LoginResult net_login(const char *email, const char *password) {
 
     if (!json || !*json) {
         free(json);
-        snprintf(r.message, sizeof(r.message), "No response - check Wi-Fi");
+        snprintf(r.message, sizeof(r.message), "%s", T("login_no_response"));
         return r;
     }
 
     cJSON *root = cJSON_Parse(json);
     free(json);
     if (!root) {
-        snprintf(r.message, sizeof(r.message), "Unexpected reply from archive.org");
+        snprintf(r.message, sizeof(r.message), "%s", T("login_bad_reply"));
         return r;
     }
 
@@ -153,9 +154,9 @@ LoginResult net_login(const char *email, const char *password) {
          * is distinguishable from a service problem. */
         cJSON *reason = values ? cJSON_GetObjectItemCaseSensitive(values, "reason") : NULL;
         if (cJSON_IsString(reason) && reason->valuestring) {
-            snprintf(r.message, sizeof(r.message), "Sign-in failed: %s", reason->valuestring);
+            snprintf(r.message, sizeof(r.message), T("login_fail_reason_fmt"), reason->valuestring);
         } else {
-            snprintf(r.message, sizeof(r.message), "Sign-in failed");
+            snprintf(r.message, sizeof(r.message), "%s", T("login_fail"));
         }
         cJSON_Delete(root);
         return r;
@@ -166,7 +167,7 @@ LoginResult net_login(const char *email, const char *password) {
     cJSON *sig = cookies ? cJSON_GetObjectItemCaseSensitive(cookies, "logged-in-sig") : NULL;
 
     if (!cJSON_IsString(user) || !cJSON_IsString(sig) || !user->valuestring || !sig->valuestring) {
-        snprintf(r.message, sizeof(r.message), "Signed in, but no session returned");
+        snprintf(r.message, sizeof(r.message), "%s", T("login_no_session"));
         cJSON_Delete(root);
         return r;
     }
@@ -175,13 +176,13 @@ LoginResult net_login(const char *email, const char *password) {
     cJSON_Delete(root);
 
     if (!wrote) {
-        snprintf(r.message, sizeof(r.message), "Could not save session to card");
+        snprintf(r.message, sizeof(r.message), "%s", T("login_no_save"));
         return r;
     }
 
     auth_init(); /* pick the new cookies up immediately, no restart needed */
     r.ok = true;
-    snprintf(r.message, sizeof(r.message), "Signed in");
+    snprintf(r.message, sizeof(r.message), "%s", T("login_ok"));
     return r;
 }
 

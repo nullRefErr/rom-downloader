@@ -2,6 +2,7 @@
 #define AUTH_H
 
 #include <stdbool.h>
+#include <stddef.h>
 
 /* Optional archive.org sign-in.
  *
@@ -37,6 +38,10 @@ void auth_init(void);
 
 /* True when a usable cookie file AND the CA bundle are both present. */
 bool auth_available(void);
+
+/* Best-effort account label for the settings screen: the address from the
+ * stored session, percent-decoded. Empty string when not signed in. */
+void auth_account(char *out, size_t outsz);
 
 /* Path to the generated curl config; only valid while auth_available(). */
 const char *auth_curl_config(void);

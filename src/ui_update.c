@@ -1,4 +1,5 @@
 #include "ui_update.h"
+#include "i18n.h"
 #include "ui_chrome.h"
 #include "download.h"
 #include <stdio.h>
@@ -31,7 +32,7 @@ static void key_event_cb(lv_event_t *e) {
     uint32_t key = lv_event_get_key(e);
     if (key == LV_KEY_ENTER) {
         g_state = ST_DOWNLOADING;
-        lv_label_set_text(g_info_label, "Downloading update...");
+        lv_label_set_text(g_info_label, T("update_downloading"));
         lv_bar_set_value(g_bar, 0, LV_ANIM_OFF);
         lv_obj_remove_flag(g_bar, LV_OBJ_FLAG_HIDDEN);
         download_start_url(g_download_url, ".", "romdownloader.new", g_download_size);
@@ -46,16 +47,16 @@ void ui_update_build(lv_group_t *group, const UpdateCheckResult *info) {
     g_download_size = info->size;
     download_reset();
 
-    ui_chrome_build("Update Available", "A: Download & Install   B: Ignore");
+    ui_chrome_build(T("update_available"), T("hint_update"));
 
     lv_obj_t *screen = lv_screen_active();
 
     g_info_label = lv_label_create(screen);
     lv_obj_set_style_text_color(g_info_label, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(g_info_label, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(g_info_label, &lv_font_ui_22, 0);
     lv_obj_set_style_text_align(g_info_label, LV_TEXT_ALIGN_CENTER, 0);
     char msg[64];
-    snprintf(msg, sizeof(msg), "Version %s is ready", info->latest_tag);
+    snprintf(msg, sizeof(msg), T("update_version_ready_fmt"), info->latest_tag);
     lv_label_set_text(g_info_label, msg);
     lv_obj_align(g_info_label, LV_ALIGN_CENTER, 0, -20);
 
@@ -89,7 +90,7 @@ UiUpdateStatus ui_update_tick(void) {
             g_state = ST_RESTART;
         } else if (st == DOWNLOAD_FAILED) {
             download_reset();
-            show_failure("Update download failed");
+            show_failure(T("update_failed_download"));
         }
     } else if (g_state == ST_FAILED_WAIT) {
         if (lv_tick_elaps(g_msg_tick) >= STATUS_MSG_MS) g_state = ST_FINISHED;

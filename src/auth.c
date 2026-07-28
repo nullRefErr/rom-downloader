@@ -1,6 +1,7 @@
 #include "auth.h"
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 
 #define COOKIE_FILE "archive_cookies.txt"
 #define CURL_CONFIG ".curl_auth.cfg"
@@ -68,6 +69,38 @@ void auth_init(void) {
     fclose(cfg);
 
     g_ok = true;
+}
+
+/* The stored session carries the account address percent-encoded
+ * ("you%40example.com"); decode just enough to show it back to the user. */
+void auth_account(char *out, size_t outsz) {
+    if (outsz) out[0] = '\0';
+    FILE *f = fopen(COOKIE_FILE, "r");
+    if (!f) return;
+
+    char line[1024];
+    while (fgets(line, sizeof(line), f)) {
+        const char *v = strstr(line, "logged-in-user=");
+        if (!v) continue;
+        v += strlen("logged-in-user=");
+        size_t o = 0;
+        for (; *v && *v != ';' && *v != '\n' && *v != '\r' && o + 1 < outsz; v++) {
+            if (v[0] == '%' && v[1] && v[2]) {
+                char hex[3] = { v[1], v[2], 0 };
+                char *end = NULL;
+                long c = strtol(hex, &end, 16);
+                if (end && *end == '\0' && c > 0) {
+                    out[o++] = (char)c;
+                    v += 2;
+                    continue;
+                }
+            }
+            out[o++] = *v;
+        }
+        out[o] = '\0';
+        break;
+    }
+    fclose(f);
 }
 
 bool auth_available(void) {

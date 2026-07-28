@@ -14,7 +14,7 @@ STRIP=/opt/miyoomini-toolchain/usr/bin/arm-linux-gnueabihf-strip
 
 docker run --rm -v "$(pwd)":/root/workspace -w /root/workspace miyoomini-toolchain /bin/bash -c "
 	set -e
-	SRC=\"\$(find src -name '*.c') third_party/cjson/cJSON.c \$(find third_party/lvgl/src -name '*.c' -not -path '*/drivers/*')\"
+	SRC=\"\$(find src -name '*.c') \$(find third_party/fonts -name '*.c') third_party/cjson/cJSON.c \$(find third_party/lvgl/src -name '*.c' -not -path '*/drivers/*')\"
 	$GCC -Wall -Wextra -O2 \
 		-Isrc -Ithird_party/lvgl -Ithird_party -Ithird_party/cjson \
 		-I third_party/SDL2-headers/include \

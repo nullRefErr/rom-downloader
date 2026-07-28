@@ -45,6 +45,14 @@ DownloadState download_poll(float *out_progress);
  * DONE or FAILED result, so the next ENTER press can start fresh. */
 void download_reset(void);
 
+/* Deletes every leftover .part file under `roms_root` (i.e. Roms/<SYS>/).
+ * These accumulate because an interrupted download deliberately keeps its
+ * partial file so `wget -c` can resume it — but a download the user never
+ * returns to just holds onto its bytes forever, invisibly, and a PS1 partial
+ * is hundreds of megabytes. Returns how many files were removed and, via
+ * `freed_bytes`, how much space that recovered. */
+int download_cleanup_parts(const char *roms_root, unsigned long long *freed_bytes);
+
 /* Simple existence check for the "Downloaded" indicator — independent of
  * the download_start/poll state machine above. */
 bool download_file_exists(const char *dest_dir, const char *dest_filename);

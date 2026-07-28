@@ -697,10 +697,11 @@
  *  #define LV_FONT_CUSTOM_DECLARE   LV_FONT_DECLARE(my_font_1) LV_FONT_DECLARE(my_font_2)
  *  @endcode
  */
-#define LV_FONT_CUSTOM_DECLARE
+#define LV_FONT_CUSTOM_DECLARE LV_FONT_DECLARE(lv_font_ui_14) LV_FONT_DECLARE(lv_font_ui_16) \
+                               LV_FONT_DECLARE(lv_font_ui_22) LV_FONT_DECLARE(lv_font_ui_24)
 
 /** Always set a default font */
-#define LV_FONT_DEFAULT &lv_font_montserrat_22
+#define LV_FONT_DEFAULT &lv_font_ui_22
 
 /** Enable handling large font and/or fonts with a lot of characters.
  *  The limit depends on the font size, font face and bpp.

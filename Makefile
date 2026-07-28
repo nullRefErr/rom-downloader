@@ -1,6 +1,6 @@
 APP_DIR := package/App/RomDownloader
 BUILD_DIR := build
-SRC := $(wildcard src/*.c) third_party/cjson/cJSON.c $(shell find third_party/lvgl/src -name '*.c' -not -path '*/drivers/*')
+SRC := $(wildcard src/*.c) $(wildcard third_party/fonts/*.c) third_party/cjson/cJSON.c $(shell find third_party/lvgl/src -name '*.c' -not -path '*/drivers/*')
 INC := -Isrc -Ithird_party/lvgl -Ithird_party -Ithird_party/cjson
 
 .PHONY: host device clean

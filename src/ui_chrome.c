@@ -19,6 +19,9 @@ void ui_chrome_build(const char *title, const char *hints) {
 
     g_status_label = lv_label_create(screen);
     lv_label_set_recolor(g_status_label, true); /* colour just the Wi-Fi glyph */
+    /* Stays on the stock font on purpose: this label renders LV_SYMBOL
+     * glyphs (Wi-Fi, SD card) and digits only, never translated text, and
+     * the generated ui fonts carry no FontAwesome range. */
     lv_obj_set_style_text_font(g_status_label, &lv_font_montserrat_16, 0);
     lv_obj_set_style_text_color(g_status_label, lv_color_hex(0xaaaaaa), 0);
     lv_obj_align(g_status_label, LV_ALIGN_TOP_RIGHT, -8, 6);
@@ -27,7 +30,7 @@ void ui_chrome_build(const char *title, const char *hints) {
     lv_obj_t *footer = lv_label_create(screen);
     lv_label_set_text(footer, hints);
     lv_obj_set_style_text_color(footer, lv_color_hex(0x999999), 0);
-    lv_obj_set_style_text_font(footer, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_font(footer, &lv_font_ui_16, 0); /* translated text */
     lv_obj_align(footer, LV_ALIGN_BOTTOM_LEFT, 8, -4);
 }
 

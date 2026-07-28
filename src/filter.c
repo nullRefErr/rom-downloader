@@ -1,15 +1,16 @@
 #include "filter.h"
+#include "i18n.h"
 #include <string.h>
 #include <stdio.h>
 
 const char *region_label(RegionFilter r) {
     switch (r) {
-        case REGION_USA:    return "USA";
-        case REGION_EUROPE: return "Europe";
-        case REGION_JAPAN:  return "Japan";
-        case REGION_WORLD:  return "World";
+        case REGION_USA:    return T("region_usa");
+        case REGION_EUROPE: return T("region_europe");
+        case REGION_JAPAN:  return T("region_japan");
+        case REGION_WORLD:  return T("region_world");
         case REGION_ALL:
-        default:            return "All";
+        default:            return T("region_all");
     }
 }
 

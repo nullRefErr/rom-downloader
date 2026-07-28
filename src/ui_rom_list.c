@@ -1,4 +1,5 @@
 #include "ui_rom_list.h"
+#include "i18n.h"
 #include "ui_style.h"
 #include "ui_chrome.h"
 #include "thumbnail.h"
@@ -197,7 +198,7 @@ static void redraw(void) {
         lv_label_set_text(g_info_label, sizebuf);
 
         if (download_file_exists(g_roms_dir, display_name(g_list.items[idx].name))) {
-            lv_label_set_text(g_downloaded_label, "Downloaded");
+            lv_label_set_text(g_downloaded_label, T("downloaded"));
             lv_obj_remove_flag(g_downloaded_label, LV_OBJ_FLAG_HIDDEN);
         } else {
             lv_obj_add_flag(g_downloaded_label, LV_OBJ_FLAG_HIDDEN);
@@ -211,9 +212,9 @@ static void redraw(void) {
          * to zero rows, and without this the user saw a blank list plus the
          * previous selection's stale box art and no explanation. */
         lv_label_set_text(g_empty_label,
-                          g_filter_active ? "No matching roms" :
-                          g_list.restricted ? "Needs an archive.org account.\nPress A to sign in." :
-                          (g_list.ok ? "No roms" : "Source unavailable right now"));
+                          g_filter_active ? T("empty_no_matching") :
+                          g_list.restricted ? T("empty_needs_account") :
+                          (g_list.ok ? T("empty_no_roms") : T("empty_source_unavailable")));
         lv_obj_remove_flag(g_empty_label, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(g_thumb_img, LV_OBJ_FLAG_HIDDEN);
     }
@@ -346,7 +347,7 @@ void ui_rom_list_open_search(void) {
     lv_obj_t *ta = lv_textarea_create(g_search_overlay); /* child 0 — see process_pending_search_close() */
     lv_textarea_set_one_line(ta, true);
     lv_textarea_set_text(ta, ""); /* always start empty, regardless of any previous search */
-    lv_textarea_set_placeholder_text(ta, "Search roms...");
+    lv_textarea_set_placeholder_text(ta, T("search_placeholder"));
     lv_obj_set_size(ta, LV_PCT(96), 40);
     lv_obj_align(ta, LV_ALIGN_TOP_MID, 0, 8);
     lv_obj_set_style_bg_color(ta, lv_color_hex(0x111111), 0);
@@ -445,7 +446,7 @@ static void open_download_confirm(void) {
     char sizebuf[32];
     format_size(g_list.items[idx].size, sizebuf, sizeof(sizebuf));
     char msg[220];
-    snprintf(msg, sizeof(msg), "Download this rom?\n\n%s\n%s",
+    snprintf(msg, sizeof(msg), T("confirm_download"),
              display_name(g_list.items[idx].name), sizebuf);
 
     lv_obj_t *label = lv_label_create(box);
@@ -456,7 +457,7 @@ static void open_download_confirm(void) {
     lv_obj_align(label, LV_ALIGN_TOP_MID, 0, 8);
 
     lv_obj_t *hint = lv_label_create(box);
-    lv_label_set_text(hint, "A: Confirm   B: Cancel");
+    lv_label_set_text(hint, T("hint_confirm"));
     lv_obj_set_style_text_color(hint, lv_color_hex(0x888888), 0);
     lv_obj_align(hint, LV_ALIGN_BOTTOM_MID, 0, -8);
 
@@ -489,10 +490,10 @@ static void render_filter_overlay(void) {
      * value. Kept text-only (no focus styling) for the same reason the
      * search keyboard does — this device's per-widget focus styling has
      * been unreliable, an explicit marker always renders. */
-    snprintf(rbuf, sizeof(rbuf), "%sRegion:  < %s >",
-             g_filter_sel == 0 ? "> " : "  ", region_label(g_filter_tmp_region));
-    snprintf(fbuf, sizeof(fbuf), "%sFavourites only:  %s",
-             g_filter_sel == 1 ? "> " : "  ", g_filter_tmp_fav ? "On" : "Off");
+    snprintf(rbuf, sizeof(rbuf), "%s%s:  < %s >",
+             g_filter_sel == 0 ? "> " : "  ", T("filter_region"), region_label(g_filter_tmp_region));
+    snprintf(fbuf, sizeof(fbuf), "%s%s:  %s",
+             g_filter_sel == 1 ? "> " : "  ", T("filter_favourites_only"), g_filter_tmp_fav ? T("on") : T("off"));
     lv_label_set_text(g_filter_region_label, rbuf);
     lv_label_set_text(g_filter_fav_label, fbuf);
 }
@@ -569,7 +570,7 @@ void ui_rom_list_open_filter(void) {
     lv_obj_remove_flag(box, LV_OBJ_FLAG_SCROLLABLE);
 
     lv_obj_t *title = lv_label_create(box);
-    lv_label_set_text(title, "Filters");
+    lv_label_set_text(title, T("filters_title"));
     lv_obj_set_style_text_color(title, lv_color_hex(0xffffff), 0);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 4);
 
@@ -582,9 +583,9 @@ void ui_rom_list_open_filter(void) {
     lv_obj_align(g_filter_fav_label, LV_ALIGN_TOP_LEFT, 8, 76);
 
     lv_obj_t *hint = lv_label_create(box);
-    lv_label_set_text(hint, "Up/Down: Row  Left/Right: Change  A: Apply  B: Cancel");
+    lv_label_set_text(hint, T("hint_filters"));
     lv_obj_set_style_text_color(hint, lv_color_hex(0x888888), 0);
-    lv_obj_set_style_text_font(hint, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(hint, &lv_font_ui_14, 0);
     lv_obj_align(hint, LV_ALIGN_BOTTOM_MID, 0, -8);
 
     render_filter_overlay();
@@ -695,11 +696,11 @@ void ui_rom_list_build(lv_group_t *group, const EmuEntry *emu, RomList list,
     if (g_list.ok) {
         snprintf(header, sizeof(header), "%s", emu->label);
     } else if (g_list.restricted) {
-        snprintf(header, sizeof(header), "%s (account required)", emu->label);
+        snprintf(header, sizeof(header), T("suffix_account_required"), emu->label);
     } else {
-        snprintf(header, sizeof(header), "%s (source unavailable)", emu->label);
+        snprintf(header, sizeof(header), T("suffix_source_unavailable"), emu->label);
     }
-    ui_chrome_build(header, "A:DL  Y:Search  X:Fav  Sel:Filter  B:Back");
+    ui_chrome_build(header, T("hint_rom_list"));
 
     lv_obj_t *screen = lv_screen_active();
 
@@ -720,17 +721,17 @@ void ui_rom_list_build(lv_group_t *group, const EmuEntry *emu, RomList list,
 
     g_info_label = lv_label_create(screen);
     lv_obj_set_style_text_color(g_info_label, lv_color_hex(0xaaaaaa), 0);
-    lv_obj_set_style_text_font(g_info_label, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_font(g_info_label, &lv_font_ui_16, 0);
     lv_obj_align(g_info_label, LV_ALIGN_TOP_RIGHT, -4, UI_CHROME_HEADER_H + 148);
 
     g_page_label = lv_label_create(screen);
     lv_obj_set_style_text_color(g_page_label, lv_color_hex(0x777777), 0);
-    lv_obj_set_style_text_font(g_page_label, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_font(g_page_label, &lv_font_ui_16, 0);
     lv_obj_align(g_page_label, LV_ALIGN_TOP_RIGHT, -4, UI_CHROME_HEADER_H + 168);
 
     g_downloaded_label = lv_label_create(screen);
     lv_obj_set_style_text_color(g_downloaded_label, lv_color_hex(0x2ecc40), 0); /* green, per request */
-    lv_obj_set_style_text_font(g_downloaded_label, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_font(g_downloaded_label, &lv_font_ui_16, 0);
     lv_obj_align(g_downloaded_label, LV_ALIGN_TOP_RIGHT, -4, UI_CHROME_HEADER_H + 188);
     lv_obj_add_flag(g_downloaded_label, LV_OBJ_FLAG_HIDDEN);
 
@@ -742,7 +743,7 @@ void ui_rom_list_build(lv_group_t *group, const EmuEntry *emu, RomList list,
 
     g_download_status_label = lv_label_create(screen);
     lv_obj_set_style_text_color(g_download_status_label, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(g_download_status_label, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_font(g_download_status_label, &lv_font_ui_16, 0);
     lv_obj_align(g_download_status_label, LV_ALIGN_TOP_RIGHT, -4, UI_CHROME_HEADER_H + 230);
     lv_obj_add_flag(g_download_status_label, LV_OBJ_FLAG_HIDDEN);
 
@@ -807,7 +808,7 @@ static void update_download(void) {
         ui_chrome_refresh_status(); /* free space dropped */
     } else if (qs.last_result == QRESULT_FAILED) {
         queue_clear_last_result();
-        lv_label_set_text(g_download_status_label, "Download failed");
+        lv_label_set_text(g_download_status_label, T("download_failed"));
         lv_obj_set_style_text_color(g_download_status_label, lv_color_hex(0xff4136), 0);
         lv_obj_remove_flag(g_download_status_label, LV_OBJ_FLAG_HIDDEN);
         g_status_msg_pending = true;
@@ -819,8 +820,8 @@ static void update_download(void) {
         lv_obj_remove_flag(g_download_bar, LV_OBJ_FLAG_HIDDEN);
         if (!g_status_msg_pending) { /* don't clobber a failed toast still showing */
             char buf[48];
-            if (qs.waiting > 0) snprintf(buf, sizeof(buf), "Downloading... (+%d)", qs.waiting);
-            else snprintf(buf, sizeof(buf), "Downloading...");
+            if (qs.waiting > 0) snprintf(buf, sizeof(buf), T("downloading_queued_fmt"), qs.waiting);
+            else snprintf(buf, sizeof(buf), "%s", T("downloading"));
             lv_label_set_text(g_download_status_label, buf);
             lv_obj_set_style_text_color(g_download_status_label, lv_color_hex(0xffffff), 0);
             lv_obj_remove_flag(g_download_status_label, LV_OBJ_FLAG_HIDDEN);

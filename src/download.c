@@ -5,6 +5,7 @@
 #include <string.h>
 #include <stdarg.h>
 #include <sys/stat.h>
+#include <dirent.h>
 
 static void dlog(const char *fmt, ...) {
     FILE *f = fopen("log.txt", "a");
@@ -253,6 +254,49 @@ DownloadState download_poll(float *out_progress) {
 
 void download_reset(void) {
     g_state = DOWNLOAD_IDLE;
+}
+
+static bool ends_with(const char *s, const char *suffix) {
+    size_t ls = strlen(s), lf = strlen(suffix);
+    return ls >= lf && strcmp(s + ls - lf, suffix) == 0;
+}
+
+int download_cleanup_parts(const char *roms_root, unsigned long long *freed_bytes) {
+    int removed = 0;
+    unsigned long long freed = 0;
+
+    DIR *root = opendir(roms_root);
+    if (!root) {
+        if (freed_bytes) *freed_bytes = 0;
+        return 0;
+    }
+    struct dirent *sys;
+    while ((sys = readdir(root)) != NULL) {
+        if (sys->d_name[0] == '.') continue; /* skips . and .. and dotdirs */
+
+        char sysdir[400];
+        snprintf(sysdir, sizeof(sysdir), "%s/%s", roms_root, sys->d_name);
+        DIR *d = opendir(sysdir);
+        if (!d) continue; /* not a directory, or unreadable */
+
+        struct dirent *e;
+        while ((e = readdir(d)) != NULL) {
+            if (!ends_with(e->d_name, ".part")) continue;
+            char path[700];
+            snprintf(path, sizeof(path), "%s/%s", sysdir, e->d_name);
+            long sz = file_size(path);
+            if (remove(path) == 0) {
+                removed++;
+                if (sz > 0) freed += (unsigned long long)sz;
+            }
+        }
+        closedir(d);
+    }
+    closedir(root);
+
+    if (freed_bytes) *freed_bytes = freed;
+    dlog("cleanup: removed %d partial file(s), %llu bytes", removed, freed);
+    return removed;
 }
 
 bool download_file_exists(const char *dest_dir, const char *dest_filename) {

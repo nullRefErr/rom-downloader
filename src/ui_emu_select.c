@@ -1,4 +1,5 @@
 #include "ui_emu_select.h"
+#include "i18n.h"
 #include "ui_style.h"
 #include "ui_chrome.h"
 #include <stdio.h>
@@ -54,7 +55,7 @@ void ui_emu_select_build(lv_group_t *group, ui_emu_select_cb_t on_select) {
     g_available_count = 0;
     g_selected = 0;
 
-    ui_chrome_build("Rom Downloader By AEY", "Up/Down: Move   A: Select   Start: Quit");
+    ui_chrome_build(T("app_title"), T("hint_emu_select"));
 
     lv_obj_t *list = lv_list_create(lv_screen_active());
     lv_obj_set_size(list, LV_PCT(100), 480 - UI_CHROME_HEADER_H - UI_CHROME_FOOTER_H);
