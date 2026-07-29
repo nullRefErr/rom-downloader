@@ -52,13 +52,10 @@ static int ends_with_ci(const char *s, const char *suffix) {
     return 1;
 }
 
-RomList net_archive_fetch(const char *identifier, const char *ext) {
+RomList net_archive_fetch(const char *list_url, const char *ext) {
     RomList result = {0};
 
-    char url[256];
-    snprintf(url, sizeof(url), "https://archive.org/metadata/%s", identifier);
-
-    char *json = fetch_url(url);
+    char *json = fetch_url(list_url);
     if (!json) return result; /* ok=0: network/wget failure */
 
     cJSON *root = cJSON_Parse(json);

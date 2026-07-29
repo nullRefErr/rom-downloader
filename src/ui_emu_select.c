@@ -1,4 +1,5 @@
 #include "ui_emu_select.h"
+#include "sources.h"
 #include "i18n.h"
 #include "ui_style.h"
 #include "ui_chrome.h"
@@ -45,7 +46,7 @@ static void key_event_cb(lv_event_t *e) {
         }
     } else if (key == LV_KEY_ENTER) {
         if (g_on_select && g_available_count > 0) {
-            g_on_select(&EMU_TABLE[g_available_idx[g_selected]]);
+            g_on_select(sources_get(g_available_idx[g_selected]));
         }
     }
 }
@@ -64,8 +65,8 @@ void ui_emu_select_build(lv_group_t *group, ui_emu_select_cb_t on_select) {
     lv_obj_set_style_bg_opa(list, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(list, 0, 0);
 
-    for (int i = 0; i < EMU_TABLE_COUNT; i++) {
-        const EmuEntry *e = &EMU_TABLE[i];
+    for (int i = 0; i < sources_count(); i++) {
+        const EmuEntry *e = sources_get(i);
         char label[64];
         if (e->available) {
             snprintf(label, sizeof(label), "%s", e->label);

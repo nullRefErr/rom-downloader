@@ -20,8 +20,10 @@
 #include "env.h"
 #include "sound.h"
 #include "ui_settings.h"
+#include "ui_sources.h"
 #include "i18n.h"
 #include "settings.h"
+#include "sources.h"
 #include "net_login.h"
 
 /* Select button — opens the region/favourites filter overlay on the rom
@@ -48,7 +50,7 @@ static bool key_repeats(SDL_Keycode k) {
 static FILE *g_log;
 static lv_group_t *g_group;
 
-typedef enum { SCREEN_UPDATE, SCREEN_EMU_SELECT, SCREEN_ROM_LIST, SCREEN_SETTINGS } Screen;
+typedef enum { SCREEN_UPDATE, SCREEN_EMU_SELECT, SCREEN_ROM_LIST, SCREEN_SETTINGS, SCREEN_SOURCES } Screen;
 static Screen g_screen;
 
 static void logmsg(const char *fmt, ...) {
@@ -84,8 +86,10 @@ static void on_emu_selected(const EmuEntry *emu) {
     lv_obj_center(loading);
     lvgl_glue_force_redraw();
 
-    logmsg("fetching %s (%s.%s)...", emu->code, emu->archive_id, emu->ext);
-    RomList list = net_archive_fetch(emu->archive_id, emu->ext);
+    char list_url[400];
+    sources_list_url(emu, list_url, sizeof(list_url));
+    logmsg("fetching %s from %s (.%s)...", emu->code, list_url, emu->ext);
+    RomList list = net_archive_fetch(list_url, emu->ext);
     logmsg("fetch done: ok=%d count=%d restricted=%d", list.ok, list.count, list.restricted);
 
     lv_obj_clean(lv_screen_active());
@@ -108,6 +112,16 @@ static void show_settings(void) {
     lv_obj_clean(lv_screen_active());
     ui_settings_build(g_group, on_settings_back);
     g_screen = SCREEN_SETTINGS;
+}
+
+static void on_sources_back(void) {
+    show_settings(); /* rebuilt, so an edited source shows straight away */
+}
+
+static void show_sources(void) {
+    lv_obj_clean(lv_screen_active());
+    ui_sources_build(g_group, on_sources_back);
+    g_screen = SCREEN_SOURCES;
 }
 
 /* Blocking GitHub Releases check (small JSON response, 5s timeout ceiling
@@ -174,6 +188,7 @@ int main(int argc, char **argv) {
         return 1;
     }
     settings_load();
+    sources_load();
     i18n_load(settings_get()->lang);
     auth_init();   /* optional archive.org cookies, see auth.h */
     queue_reset(); /* once at startup — the queue outlives individual screens */
@@ -249,12 +264,16 @@ int main(int argc, char **argv) {
                          * on-screen keyboard's own tiny backspace key by
                          * D-pad felt too tedious (reported directly) — Y
                          * doubles as a direct backspace shortcut instead. */
-                        if (ui_login_is_open()) ui_login_backspace();
+                        if (ui_sources_editing()) ui_sources_backspace();
+                        else if (g_screen == SCREEN_SOURCES) ui_sources_reset_defaults();
+                        else if (ui_login_is_open()) ui_login_backspace();
                         else if (ui_rom_list_search_is_open()) ui_rom_list_search_backspace();
                         else ui_rom_list_open_search();
                     }
                     if (kc == SDLK_LSHIFT) { /* X */
-                        if (ui_login_is_open()) ui_login_clear_field();
+                        if (ui_sources_editing()) ui_sources_clear_field();
+                        else if (g_screen == SCREEN_SOURCES) ui_sources_toggle_available();
+                        else if (ui_login_is_open()) ui_login_clear_field();
                         else if (g_screen == SCREEN_ROM_LIST) ui_rom_list_toggle_favorite();
                     }
                     if (kc == KEY_SELECT) { /* Select */
@@ -287,7 +306,11 @@ int main(int argc, char **argv) {
         if (g_screen != SCREEN_UPDATE) queue_tick();
         ui_login_tick();
         if (g_screen == SCREEN_ROM_LIST) ui_rom_list_tick();
-        if (g_screen == SCREEN_SETTINGS) ui_settings_tick();
+        if (g_screen == SCREEN_SETTINGS) {
+            ui_settings_tick();
+            if (ui_settings_wants_sources()) show_sources();
+        }
+        if (g_screen == SCREEN_SOURCES) ui_sources_tick();
         if (g_screen == SCREEN_UPDATE) {
             UiUpdateStatus st = ui_update_tick();
             if (st == UI_UPDATE_FINISHED) {

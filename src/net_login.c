@@ -33,6 +33,8 @@ static void form_encode(const char *in, char *out, size_t outsz) {
     out[o] = '\0';
 }
 
+static int g_last_exit;
+
 static char *run_capture(const char *cmd) {
     FILE *p = popen(cmd, "r");
     if (!p) return NULL;
@@ -56,7 +58,12 @@ static char *run_capture(const char *cmd) {
             buf = nb;
         }
     }
-    pclose(p);
+    int status = pclose(p);
+    /* curl's exit code distinguishes "no network" from "the certificate was
+     * rejected", which on this device usually means the clock is wrong — it
+     * has no battery-backed RTC, and a date that is far off makes every
+     * certificate look not-yet-valid. Both used to surface as "check Wi-Fi". */
+    g_last_exit = (status == -1) ? -1 : (status / 256);
     buf[len] = '\0';
     return buf;
 }
@@ -134,7 +141,22 @@ LoginResult net_login(const char *email, const char *password) {
 
     if (!json || !*json) {
         free(json);
-        snprintf(r.message, sizeof(r.message), "%s", T("login_no_response"));
+        switch (g_last_exit) {
+            case 60: /* CURLE_PEER_FAILED_VERIFICATION */
+            case 77:
+                snprintf(r.message, sizeof(r.message), "%s", T("login_tls_failed"));
+                break;
+            case 6: /* couldn't resolve host */
+            case 7: /* couldn't connect */
+                snprintf(r.message, sizeof(r.message), "%s", T("login_no_response"));
+                break;
+            case 28: /* timed out */
+                snprintf(r.message, sizeof(r.message), "%s", T("login_timeout"));
+                break;
+            default:
+                snprintf(r.message, sizeof(r.message), T("login_failed_code_fmt"), g_last_exit);
+                break;
+        }
         return r;
     }
 

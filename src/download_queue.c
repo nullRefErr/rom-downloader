@@ -9,7 +9,7 @@
  * truncated the saved filename so the "already downloaded" check — which
  * uses the full untruncated name — never matched. */
 typedef struct {
-    char archive_id[96];
+    char base_url[300];
     char item_path[512];
     char dest_dir[300];
     char dest_filename[256];
@@ -38,7 +38,7 @@ static bool same_target(const QueueItem *it, const char *dir, const char *file) 
     return strcmp(it->dest_dir, dir) == 0 && strcmp(it->dest_filename, file) == 0;
 }
 
-bool queue_add(const char *archive_id, const char *item_path,
+bool queue_add(const char *base_url, const char *item_path,
                const char *dest_dir, const char *dest_filename,
                unsigned long size) {
     if (g_count >= MAX_QUEUE_SIZE) return false;
@@ -50,7 +50,7 @@ bool queue_add(const char *archive_id, const char *item_path,
     }
 
     QueueItem *it = &g_items[g_tail];
-    snprintf(it->archive_id, sizeof(it->archive_id), "%s", archive_id);
+    snprintf(it->base_url, sizeof(it->base_url), "%s", base_url);
     snprintf(it->item_path, sizeof(it->item_path), "%s", item_path);
     snprintf(it->dest_dir, sizeof(it->dest_dir), "%s", dest_dir);
     snprintf(it->dest_filename, sizeof(it->dest_filename), "%s", dest_filename);
@@ -88,7 +88,7 @@ void queue_tick(void) {
         g_current = g_items[g_head];
         g_head = (g_head + 1) % MAX_QUEUE_SIZE;
         g_count--;
-        download_start(g_current.archive_id, g_current.item_path,
+        download_start(g_current.base_url, g_current.item_path,
                        g_current.dest_dir, g_current.dest_filename, g_current.size);
         g_active = true;
         g_progress = 0.0f;

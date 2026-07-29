@@ -28,7 +28,7 @@ void queue_reset(void);
 
 /* Enqueue a download. Returns false if the queue is full, the rom is
  * already downloaded, or it's already active/queued. */
-bool queue_add(const char *archive_id, const char *item_path,
+bool queue_add(const char *base_url, const char *item_path,
                const char *dest_dir, const char *dest_filename,
                unsigned long size);
 

@@ -8,6 +8,7 @@
 #include "download_queue.h"
 #include "favorites.h"
 #include "filter.h"
+#include "sources.h"
 #include "ui_login.h"
 #include <stdio.h>
 #include <stdbool.h>
@@ -478,7 +479,9 @@ static void start_download(void) {
      * roms can be lined up and each still completes even if the user backs
      * out mid-download. queue_add dedups and rejects already-have items;
      * the progress UI is filled in from queue status in update_download(). */
-    queue_add(g_emu->archive_id, item->name, g_roms_dir, display_name(item->name), item->size);
+    char base[400];
+    sources_download_base(g_emu, base, sizeof(base));
+    queue_add(base, item->name, g_roms_dir, display_name(item->name), item->size);
     g_status_msg_pending = false; /* a stale DONE/FAILED message shouldn't linger over a new one */
 }
 

@@ -2,6 +2,7 @@
 #define UI_SETTINGS_H
 
 #include "lvgl.h"
+#include <stdbool.h>
 
 typedef void (*ui_settings_back_cb_t)(void);
 
@@ -15,5 +16,8 @@ void ui_settings_build(lv_group_t *group, ui_settings_back_cb_t on_back);
 
 /* Call every frame while this screen may be active. */
 void ui_settings_tick(void);
+
+/* True when the user picked the sources row; main.c owns screen switching. */
+bool ui_settings_wants_sources(void);
 
 #endif

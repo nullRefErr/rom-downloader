@@ -8,3 +8,4 @@
 /package/App/RomDownloader/archive_cookies.txt
 /package/App/RomDownloader/.curl_auth.cfg
 /package/App/RomDownloader/.env
+/package/App/RomDownloader/sources.json

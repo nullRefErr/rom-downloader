@@ -12,7 +12,7 @@ typedef enum {
 
 /* Starts a background download: wget is backgrounded via a shell `&` (not
  * threading — matches the wget-via-shell pattern already used everywhere
- * else in this app) of archive.org item `identifier`'s file `item_path`
+ * else in this app) of `base_url`/`item_path`
  * (as listed by the metadata API — may include an internal folder prefix,
  * e.g. "CHD-PSX-EUR/007 - ....chd") into `dest_dir/dest_filename`. Writes
  * to `dest_filename.part` first; download_poll() only renames to the
@@ -20,7 +20,7 @@ typedef enum {
  * leave a corrupt-but-complete-looking rom sitting under its real name.
  * No-op if a download is already running. Triggers Onion's reset_list.sh
  * refresh on completion (see download_poll). */
-void download_start(const char *identifier, const char *item_path,
+void download_start(const char *base_url, const char *item_path,
                      const char *dest_dir, const char *dest_filename,
                      unsigned long expected_size);
 

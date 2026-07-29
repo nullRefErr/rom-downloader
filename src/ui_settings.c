@@ -14,7 +14,7 @@
 #define ROMS_ROOT "/mnt/SDCARD/Roms"
 #define STATUS_MS 3000
 
-enum { ROW_LANGUAGE, ROW_SOUND, ROW_ACCOUNT, ROW_CLEANUP, ROW_COUNT };
+enum { ROW_LANGUAGE, ROW_SOUND, ROW_SOURCES, ROW_ACCOUNT, ROW_CLEANUP, ROW_COUNT };
 
 static lv_obj_t *g_rows[ROW_COUNT];
 static lv_obj_t *g_labels[ROW_COUNT];
@@ -27,6 +27,7 @@ static uint32_t g_status_tick;
 static bool g_status_showing;
 static bool g_rebuild_pending; /* language changed: rebuild outside the event handler */
 static bool g_back_pending;    /* leaving: same, see key_event_cb */
+static bool g_sources_pending;  /* opening the source editor: also deferred */
 
 static void format_size(unsigned long long bytes, char *out, size_t outsz) {
     if (bytes >= 1024ULL * 1024 * 1024) snprintf(out, outsz, "%.1f GB", bytes / (1024.0 * 1024 * 1024));
@@ -66,6 +67,7 @@ static void refresh_rows(void) {
     }
     lv_label_set_text(g_labels[ROW_ACCOUNT], buf);
 
+    lv_label_set_text(g_labels[ROW_SOURCES], T("settings_sources"));
     lv_label_set_text(g_labels[ROW_CLEANUP], T("settings_cleanup"));
 
     for (int i = 0; i < ROW_COUNT; i++) {
@@ -94,6 +96,9 @@ static void activate(void) {
         case ROW_SOUND:
             settings_set_sound(!s->sound);
             refresh_rows();
+            break;
+        case ROW_SOURCES:
+            g_sources_pending = true; /* screen swap, so never from in here */
             break;
         case ROW_ACCOUNT:
             if (auth_available()) {
@@ -148,6 +153,7 @@ void ui_settings_build(lv_group_t *group, ui_settings_back_cb_t on_back) {
     g_status_showing = false;
     g_rebuild_pending = false;
     g_back_pending = false;
+    g_sources_pending = false;
 
     ui_chrome_build(T("settings_title"), T("hint_settings"));
 
@@ -185,6 +191,12 @@ void ui_settings_build(lv_group_t *group, ui_settings_back_cb_t on_back) {
 
     lv_group_add_obj(group, g_container);
     lv_obj_add_event_cb(g_container, key_event_cb, LV_EVENT_KEY, NULL);
+}
+
+bool ui_settings_wants_sources(void) {
+    if (!g_sources_pending) return false;
+    g_sources_pending = false;
+    return true;
 }
 
 void ui_settings_tick(void) {

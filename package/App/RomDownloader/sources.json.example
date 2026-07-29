@@ -1,0 +1,46 @@
+{
+  "_comment": [
+    "Rom sources. Rename this file to sources.json to use it, or just edit the",
+    "list from the app: Settings -> Rom sources. Editing it there writes this",
+    "file for you, so hand-editing is optional.",
+    "",
+    "Without this file the app uses its built-in list. Delete it (or press Y on",
+    "the sources screen) to go back to that at any time.",
+    "",
+    "Each entry needs a code and either archive_id or url:",
+    "",
+    "  code        the Roms/<code> folder the downloads go into, which is also",
+    "              how the device's emulators find them. Must match a folder",
+    "              your firmware already knows: PS, MD, GB, GBC, GBA, FC, SFC,",
+    "              GG, MS, PCE, 2600, 7800, NDS...",
+    "  label       what the system is called in the app",
+    "  archive_id  an archive.org item name, e.g. \"nointro.md\"",
+    "  url         instead of archive_id: any URL returning a listing (see below)",
+    "  base        only with url: prefix for the files. Left out, the files are",
+    "              assumed to sit in the same folder as the listing.",
+    "  ext         which file extension to list from that source",
+    "  thumb_repo  libretro-thumbnails repo for box art, \"\" for none",
+    "  available   false greys the system out without deleting its settings",
+    "",
+    "A self-hosted listing is a small JSON file:",
+    "",
+    "  { \"files\": [ { \"name\": \"Some Game.zip\", \"size\": 524288 } ] }",
+    "",
+    "That is a subset of what archive.org's metadata API returns, which is why",
+    "one parser handles both. size may be a number or a string, and is only",
+    "used for the progress bar and the free-space figure — it can be left out.",
+    "",
+    "Box art lookups follow libretro-thumbnails naming, so covers will mostly",
+    "miss unless the file names follow the No-Intro convention."
+  ],
+
+  "sources": [
+    { "code": "MD", "label": "Sega Genesis", "archive_id": "nointro.md",
+      "url": "", "base": "", "ext": "7z",
+      "thumb_repo": "Sega_-_Mega_Drive_-_Genesis", "available": true },
+
+    { "code": "GB", "label": "My Game Boy shelf", "archive_id": "",
+      "url": "https://example.local/roms/gb/index.json", "base": "",
+      "ext": "gb", "thumb_repo": "Nintendo_-_Game_Boy", "available": true }
+  ]
+}

@@ -67,7 +67,16 @@
     "settings_cleanup": "Clear unfinished downloads",
     "settings_cleanup_none": "Nothing to clear",
     "settings_cleanup_done_fmt": "Cleared %d file(s), %s freed",
-    "settings_signed_out_done": "Signed out"
+    "settings_signed_out_done": "Signed out",
+    "login_tls_failed": "Secure connection failed - check the device date/time",
+    "login_timeout": "Timed out - try again",
+    "login_failed_code_fmt": "Sign-in failed (error %d) - see log.txt",
+    "settings_sources": "Rom sources",
+    "sources_title": "Rom sources",
+    "hint_sources": "A: Edit   X: On/Off   Y: Defaults   B: Back",
+    "sources_edit_hint": "An archive.org item name, or a full URL to a listing you host.",
+    "sources_saved": "Source saved",
+    "sources_reset_done": "Defaults restored"
   },
   "de": {
     "app_title": "Rom Downloader By AEY",
@@ -137,7 +146,16 @@
     "settings_cleanup": "Unfertige Downloads löschen",
     "settings_cleanup_none": "Nichts zu löschen",
     "settings_cleanup_done_fmt": "%d Datei(en) gelöscht, %s frei",
-    "settings_signed_out_done": "Abgemeldet"
+    "settings_signed_out_done": "Abgemeldet",
+    "login_tls_failed": "Sichere Verbindung fehlgeschlagen - Datum/Uhrzeit prüfen",
+    "login_timeout": "Zeitüberschreitung - erneut versuchen",
+    "login_failed_code_fmt": "Anmeldung fehlgeschlagen (Fehler %d) - siehe log.txt",
+    "settings_sources": "Rom-Quellen",
+    "sources_title": "Rom-Quellen",
+    "hint_sources": "A: Ändern  X: An/Aus  Y: Standard  B: Zurück",
+    "sources_edit_hint": "Ein archive.org-Name oder eine vollständige URL zu einer eigenen Liste.",
+    "sources_saved": "Quelle gespeichert",
+    "sources_reset_done": "Standard wiederhergestellt"
   },
   "fr": {
     "app_title": "Rom Downloader By AEY",
@@ -207,7 +225,16 @@
     "settings_cleanup": "Effacer les téléch. incomplets",
     "settings_cleanup_none": "Rien à effacer",
     "settings_cleanup_done_fmt": "%d fichier(s) effacé(s), %s libéré(s)",
-    "settings_signed_out_done": "Déconnecté"
+    "settings_signed_out_done": "Déconnecté",
+    "login_tls_failed": "Connexion sécurisée échouée - vérifiez la date/heure",
+    "login_timeout": "Délai dépassé - réessayez",
+    "login_failed_code_fmt": "Échec de connexion (erreur %d) - voir log.txt",
+    "settings_sources": "Sources de roms",
+    "sources_title": "Sources de roms",
+    "hint_sources": "A: Modifier  X: On/Off  Y: Défauts  B: Retour",
+    "sources_edit_hint": "Un nom d'element archive.org, ou une URL complete vers votre liste.",
+    "sources_saved": "Source enregistree",
+    "sources_reset_done": "Defauts restaures"
   },
   "ja": {
     "app_title": "Rom Downloader By AEY",
@@ -277,7 +304,16 @@
     "settings_cleanup": "未完了のダウンロードを削除",
     "settings_cleanup_none": "削除対象なし",
     "settings_cleanup_done_fmt": "%d件を削除、%sを解放",
-    "settings_signed_out_done": "サインアウトしました"
+    "settings_signed_out_done": "サインアウトしました",
+    "login_tls_failed": "安全な接続に失敗 - 本体の日付と時刻を確認",
+    "login_timeout": "タイムアウト - 再試行してください",
+    "login_failed_code_fmt": "サインイン失敗 (エラー %d) - log.txt を確認",
+    "settings_sources": "ROMソース",
+    "sources_title": "ROMソース",
+    "hint_sources": "A:編集  X:有効/無効  Y:初期値  B:戻る",
+    "sources_edit_hint": "archive.org のアイテム名、または自分で用意した一覧の URL。",
+    "sources_saved": "ソースを保存",
+    "sources_reset_done": "初期値に戻しました"
   },
   "tr": {
     "app_title": "Rom Downloader By AEY",
@@ -347,6 +383,15 @@
     "settings_cleanup": "Yarım indirmeleri sil",
     "settings_cleanup_none": "Silinecek bir şey yok",
     "settings_cleanup_done_fmt": "%d dosya silindi, %s yer açıldı",
-    "settings_signed_out_done": "Çıkış yapıldı"
+    "settings_signed_out_done": "Çıkış yapıldı",
+    "login_tls_failed": "Güvenli bağlantı kurulamadı - cihaz saatini kontrol et",
+    "login_timeout": "Zaman aşımı - tekrar dene",
+    "login_failed_code_fmt": "Giriş başarısız (hata %d) - log.txt'ye bak",
+    "settings_sources": "Rom kaynakları",
+    "sources_title": "Rom kaynakları",
+    "hint_sources": "A: Düzenle  X: Aç/Kapat  Y: Varsayılan  B: Geri",
+    "sources_edit_hint": "Bir archive.org öğe adı ya da kendi listenin tam URL'si.",
+    "sources_saved": "Kaynak kaydedildi",
+    "sources_reset_done": "Varsayılanlara dönüldü"
   }
 }

@@ -154,14 +154,14 @@ static void begin_download(const char *url, const char *dest_dir,
     g_state = DOWNLOAD_RUNNING;
 }
 
-void download_start(const char *identifier, const char *item_path,
+void download_start(const char *base_url, const char *item_path,
                      const char *dest_dir, const char *dest_filename,
                      unsigned long expected_size) {
     if (g_state == DOWNLOAD_RUNNING) return;
 
     char encoded_path[600], url[900];
     url_encode_path(item_path, encoded_path, sizeof(encoded_path));
-    snprintf(url, sizeof(url), "https://archive.org/download/%s/%s", identifier, encoded_path);
+    snprintf(url, sizeof(url), "%s/%s", base_url, encoded_path);
 
     g_refresh_game_list = true;
     begin_download(url, dest_dir, dest_filename, expected_size);

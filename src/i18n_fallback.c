@@ -78,6 +78,15 @@ static const struct { const char *key; const char *text; } EN[] = {
     { "settings_cleanup_none", "Nothing to clear" },
     { "settings_cleanup_done_fmt", "Cleared %d file(s), %s freed" },
     { "settings_signed_out_done", "Signed out" },
+    { "login_tls_failed", "Secure connection failed - check the device date/time" },
+    { "login_timeout", "Timed out - try again" },
+    { "login_failed_code_fmt", "Sign-in failed (error %d) - see log.txt" },
+    { "settings_sources", "Rom sources" },
+    { "sources_title", "Rom sources" },
+    { "hint_sources", "A: Edit   X: On/Off   Y: Defaults   B: Back" },
+    { "sources_edit_hint", "An archive.org item name, or a full URL to a listing you host." },
+    { "sources_saved", "Source saved" },
+    { "sources_reset_done", "Defaults restored" },
 };
 
 const char *i18n_fallback(const char *key) {

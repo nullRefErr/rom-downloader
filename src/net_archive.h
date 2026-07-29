@@ -21,7 +21,12 @@ typedef struct {
  * (case-insensitive). A missing/absent `files` key (archive.org dark or
  * flagged items omit it entirely, not an empty array) is reported via
  * RomList.ok == 0, not a crash or a silently empty-but-"ok" list. */
-RomList net_archive_fetch(const char *identifier, const char *ext);
+/* `list_url` is the fully-resolved listing endpoint (see sources_list_url):
+ * either archive.org's metadata API or a URL someone self-hosts. Both are
+ * parsed the same way — we only need files[] with name and size, and
+ * archive.org's response is a superset of that, so a self-hosted source is
+ * just a small JSON file. */
+RomList net_archive_fetch(const char *list_url, const char *ext);
 
 void net_archive_free(RomList *list);
 

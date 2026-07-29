@@ -181,8 +181,6 @@ void ui_login_tick(void) {
         snprintf(password, sizeof(password), "%s", lv_textarea_get_text(g_pass_ta));
 
         LoginResult res = net_login(email, password);
-        /* Clear the password from the widget as soon as it has been used. */
-        lv_textarea_set_text(g_pass_ta, "");
 
         g_result_ok = res.ok;
         if (res.ok) {
@@ -190,6 +188,10 @@ void ui_login_tick(void) {
              * retyping when the cookies eventually expire. Plain text on the
              * card — see env.h for why that trade is being made. */
             env_save(email, password);
+            /* Only wipe it once it has actually worked. Clearing on failure
+             * meant a wrong keystroke, or a transient network error, cost a
+             * full retype on a d-pad keyboard — reported directly. */
+            lv_textarea_set_text(g_pass_ta, "");
             set_status(res.message, 0x2ecc40);
         } else {
             /* Don't leave a failure as a dead end. archive.org accounts are
@@ -209,7 +211,16 @@ void ui_login_tick(void) {
 
     if (g_step == ST_RESULT &&
         lv_tick_elaps(g_result_tick) >= (g_result_ok ? RESULT_MS : RESULT_FAIL_MS)) {
-        g_step = ST_CLOSING;
+        if (g_result_ok) {
+            g_step = ST_CLOSING;
+        } else {
+            /* Stay open on failure with the password still filled in, so a
+             * retry is one keypress rather than a full retype. Closing here
+             * meant a transient error cost the whole entry again. */
+            g_step = ST_PASSWORD;
+            lv_keyboard_set_textarea(g_kb, g_pass_ta);
+            set_status(T("login_hint_password"), 0x888888);
+        }
     }
     if (g_step == ST_CLOSING) close_now();
 }
