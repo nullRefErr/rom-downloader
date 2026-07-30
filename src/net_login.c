@@ -1,4 +1,5 @@
 #include "net_login.h"
+#include "util.h"
 #include "i18n.h"
 #include "auth.h"
 #include "cJSON.h"
@@ -19,54 +20,9 @@
 /* Percent-encode for application/x-www-form-urlencoded. Emails contain '@'
  * and '+', passwords can contain anything at all, so this has to be strict:
  * everything outside the unreserved set gets encoded. */
-static void form_encode(const char *in, char *out, size_t outsz) {
-    size_t o = 0;
-    for (size_t i = 0; in[i] && o + 4 < outsz; i++) {
-        unsigned char c = (unsigned char)in[i];
-        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
-            c == '-' || c == '_' || c == '.' || c == '~') {
-            out[o++] = (char)c;
-        } else {
-            o += (size_t)snprintf(out + o, outsz - o, "%%%02X", c);
-        }
-    }
-    out[o] = '\0';
-}
 
 static int g_last_exit;
 
-static char *run_capture(const char *cmd) {
-    FILE *p = popen(cmd, "r");
-    if (!p) return NULL;
-    size_t cap = 8192, len = 0;
-    char *buf = malloc(cap);
-    if (!buf) {
-        pclose(p);
-        return NULL;
-    }
-    size_t n;
-    while ((n = fread(buf + len, 1, cap - len - 1, p)) > 0) {
-        len += n;
-        if (len + 1 >= cap) {
-            cap *= 2;
-            char *nb = realloc(buf, cap);
-            if (!nb) {
-                free(buf);
-                pclose(p);
-                return NULL;
-            }
-            buf = nb;
-        }
-    }
-    int status = pclose(p);
-    /* curl's exit code distinguishes "no network" from "the certificate was
-     * rejected", which on this device usually means the clock is wrong — it
-     * has no battery-backed RTC, and a date that is far off makes every
-     * certificate look not-yet-valid. Both used to surface as "check Wi-Fi". */
-    g_last_exit = (status == -1) ? -1 : (status / 256);
-    buf[len] = '\0';
-    return buf;
-}
 
 /* XAuthN hands back a full Set-Cookie string, not a bare value, e.g.
  *   "you%40example.com; expires=Tue, 27-Jul-2027 ...; path=/; domain=.archive.org"
@@ -112,8 +68,8 @@ LoginResult net_login(const char *email, const char *password) {
     fclose(ca);
 
     char email_enc[512], pass_enc[1024];
-    form_encode(email, email_enc, sizeof(email_enc));
-    form_encode(password, pass_enc, sizeof(pass_enc));
+    util_url_encode(email, email_enc, sizeof(email_enc), "");
+    util_url_encode(password, pass_enc, sizeof(pass_enc), "");
 
     FILE *body = fopen(POST_BODY_FILE, "w");
     if (!body) {
@@ -128,7 +84,7 @@ LoginResult net_login(const char *email, const char *password) {
              "LD_LIBRARY_PATH=%s %s -s --max-time 30 --cacert %s "
              "--data @%s '%s' 2>>log.txt",
              CURL_LD_PATH, CURL_BIN_PATH, CA_BUNDLE, POST_BODY_FILE, XAUTHN_URL);
-    char *json = run_capture(cmd);
+    char *json = util_run_capture(cmd, &g_last_exit);
     remove(POST_BODY_FILE); /* the password never outlives the request */
 
     {   /* record what actually came back, without ever logging the body */
@@ -202,7 +158,14 @@ LoginResult net_login(const char *email, const char *password) {
         return r;
     }
 
-    auth_init(); /* pick the new cookies up immediately, no restart needed */
+    /* Cookies on disk aren't a session: auth_init() still declines if the CA
+     * bundle is missing or the curl config can't be written (a read-only card
+     * does that), and every download would then quietly run anonymously while
+     * the overlay said "Signed in". */
+    if (!auth_init()) {
+        snprintf(r.message, sizeof(r.message), "%s", T("login_no_save"));
+        return r;
+    }
     r.ok = true;
     snprintf(r.message, sizeof(r.message), "%s", T("login_ok"));
     return r;
@@ -211,5 +174,5 @@ LoginResult net_login(const char *email, const char *password) {
 void net_login_sign_out(void) {
     remove(COOKIE_FILE);
     remove(".curl_auth.cfg");
-    auth_init(); /* drops back to anonymous */
+    (void)auth_init(); /* drops back to anonymous — failure IS the goal here */
 }

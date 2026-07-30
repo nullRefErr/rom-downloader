@@ -26,11 +26,11 @@ static bool cookie_char_ok(char c) {
            c == '%' || c == '+' || c == '/' || c == ':' || c == '@' || c == '*' || c == '~';
 }
 
-void auth_init(void) {
+bool auth_init(void) {
     g_ok = false;
 
     FILE *f = fopen(COOKIE_FILE, "r");
-    if (!f) return; /* no cookies configured — anonymous mode, the normal case */
+    if (!f) return false; /* no cookies configured — anonymous mode, the normal case */
 
     /* Accept either one "a=1; b=2" line or the two cookies on separate
      * lines, and ignore blank/# lines, because this file is hand-made. */
@@ -39,7 +39,7 @@ void auth_init(void) {
     char line[1024];
     while (fgets(line, sizeof(line), f)) {
         char *p = line;
-        while (*p == ' ' || *p == '\t') p++;
+        p += strspn(p, " \t");
         if (*p == '#' || *p == '\n' || *p == '\r' || *p == '\0') continue;
 
         if (o > 0 && o + 2 < sizeof(cookie)) { /* joining separate lines */
@@ -54,21 +54,22 @@ void auth_init(void) {
     while (o > 0 && (cookie[o - 1] == ' ' || cookie[o - 1] == ';')) o--; /* tidy trailing separators */
     cookie[o] = '\0';
 
-    if (o == 0) return; /* file present but empty/comments only */
+    if (o == 0) return false; /* file present but empty/comments only */
 
     /* Refuse to run without the CA bundle: the device ships no trust store,
      * so curl would have to fall back to an unverified connection, and
      * sending someone's session cookies over one is not a trade worth
      * making. Better to stay anonymous and say why. */
-    if (!file_readable(CA_BUNDLE)) return;
+    if (!file_readable(CA_BUNDLE)) return false;
 
     FILE *cfg = fopen(CURL_CONFIG, "w");
-    if (!cfg) return;
+    if (!cfg) return false;
     fprintf(cfg, "cookie = \"%s\"\n", cookie);
     fprintf(cfg, "cacert = \"%s\"\n", CA_BUNDLE);
     fclose(cfg);
 
     g_ok = true;
+    return true;
 }
 
 /* The stored session carries the account address percent-encoded

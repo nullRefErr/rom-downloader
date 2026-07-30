@@ -1,6 +1,8 @@
 #include "download.h"
 #include "auth.h"
+#include "util.h"
 #include <stdio.h>
+#include <errno.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
@@ -26,14 +28,6 @@ static char g_failed_marker[560];
 static char g_roms_dir[300];
 static unsigned long g_expected_size;
 
-static long file_size(const char *path) {
-    FILE *f = fopen(path, "rb");
-    if (!f) return -1;
-    fseek(f, 0, SEEK_END);
-    long sz = ftell(f);
-    fclose(f);
-    return sz;
-}
 
 /* Quote a string for safe embedding in a shell command (POSIX single-quote
  * escaping: close the quote, insert an escaped literal quote, reopen).
@@ -42,38 +36,11 @@ static long file_size(const char *path) {
  * alone, 300+ in Genesis) which otherwise break out of the single-quoted
  * paths in download_start()'s wget command, same bug class as the one
  * already fixed in thumbnail.c's sanitize_filename(), just unfixed here. */
-static void shell_quote(const char *in, char *out, size_t outsz) {
-    size_t o = 0;
-    if (o + 1 < outsz) out[o++] = '\'';
-    for (size_t i = 0; in[i] && o + 5 < outsz; i++) {
-        if (in[i] == '\'') {
-            memcpy(out + o, "'\\''", 4);
-            o += 4;
-        } else {
-            out[o++] = in[i];
-        }
-    }
-    if (o + 1 < outsz) out[o++] = '\'';
-    out[o] = '\0';
-}
 
 /* Same idea as thumbnail.c's url_encode, but keeps '/' literal — archive.org
  * item paths are real subdirectory paths within the item (e.g.
  * "CHD-PSX-EUR/007 - The World Is Not Enough (Europe).chd"), not a single
  * flat filename. */
-static void url_encode_path(const char *in, char *out, size_t outsz) {
-    size_t o = 0;
-    for (size_t i = 0; in[i] && o + 4 < outsz; i++) {
-        unsigned char c = (unsigned char)in[i];
-        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
-            c == '-' || c == '_' || c == '.' || c == '~' || c == '/') {
-            out[o++] = (char)c;
-        } else {
-            o += (size_t)snprintf(out + o, outsz - o, "%%%02X", c);
-        }
-    }
-    out[o] = '\0';
-}
 
 static bool g_refresh_game_list;
 
@@ -103,17 +70,23 @@ static void begin_download(const char *url, const char *dest_dir,
      * whenever the app is quit mid-transfer: the wget was backgrounded, so it
      * keeps running to completion and leaves a full-size .part behind. */
     if (expected_size > 0) {
-        long part = file_size(g_part_path);
+        long part = util_file_size(g_part_path);
         if (part > 0 && (unsigned long)part >= expected_size) remove(g_part_path);
     }
     remove(g_done_marker);
     remove(g_failed_marker);
 
-    char cmd[3072];
-    char part_q[600], done_q[600], failed_q[600];
-    shell_quote(g_part_path, part_q, sizeof(part_q));
-    shell_quote(g_done_marker, done_q, sizeof(done_q));
-    shell_quote(g_failed_marker, failed_q, sizeof(failed_q));
+    char cmd[4608];
+    char part_q[600], done_q[600], failed_q[600], url_q[1800];
+    /* The url was safe to interpolate raw only while every base came from
+     * EMU_DEFAULTS: url_encode_path() escapes the item path, but the base is
+     * now whatever the user typed into the sources editor, so a base with an
+     * apostrophe in it closes the shell quote the same way rom names used to.
+     * Quote it like every other interpolated value. */
+    util_shell_quote(url, url_q, sizeof(url_q));
+    util_shell_quote(g_part_path, part_q, sizeof(part_q));
+    util_shell_quote(g_done_marker, done_q, sizeof(done_q));
+    util_shell_quote(g_failed_marker, failed_q, sizeof(failed_q));
 
     dlog("download: starting %s -> %s%s", url, g_final_path,
          auth_available() ? " (signed in)" : "");
@@ -129,8 +102,8 @@ static void begin_download(const char *url, const char *dest_dir,
         snprintf(cmd, sizeof(cmd),
                  "( (LD_LIBRARY_PATH=" CURL_LD_PATH " " CURL_BIN_PATH
                  " -K %s -L -C - --fail --silent --show-error "
-                 "-o %s '%s' && touch %s) || touch %s ) >>log.txt 2>&1 &",
-                 auth_curl_config(), part_q, url, done_q, failed_q);
+                 "-o %s %s && touch %s) || touch %s ) >>log.txt 2>&1 &",
+                 auth_curl_config(), part_q, url_q, done_q, failed_q);
         system(cmd);
         g_state = DOWNLOAD_RUNNING;
         return;
@@ -147,8 +120,8 @@ static void begin_download(const char *url, const char *dest_dir,
      * WHY. backgrounded (&) so download_poll() can run from the main loop
      * without blocking the UI. */
     snprintf(cmd, sizeof(cmd),
-             "( (wget -c -O %s '%s' && touch %s) || touch %s ) >>log.txt 2>&1 &",
-             part_q, url, done_q, failed_q);
+             "( (wget -c -O %s %s && touch %s) || touch %s ) >>log.txt 2>&1 &",
+             part_q, url_q, done_q, failed_q);
     system(cmd);
 
     g_state = DOWNLOAD_RUNNING;
@@ -160,7 +133,8 @@ void download_start(const char *base_url, const char *item_path,
     if (g_state == DOWNLOAD_RUNNING) return;
 
     char encoded_path[600], url[900];
-    url_encode_path(item_path, encoded_path, sizeof(encoded_path));
+    /* "/" stays literal: archive.org item paths are real subdirectories. */
+    util_url_encode(item_path, encoded_path, sizeof(encoded_path), "/");
     snprintf(url, sizeof(url), "%s/%s", base_url, encoded_path);
 
     g_refresh_game_list = true;
@@ -189,7 +163,7 @@ DownloadState download_poll(float *out_progress) {
          * 0 — renaming that to the final name would report "Downloaded" for
          * a corrupt rom. Drop the bad .part so a retry starts clean.
          * Skipped when the size is unknown (expected_size == 0). */
-        long got = file_size(g_part_path);
+        long got = util_file_size(g_part_path);
         if (g_expected_size > 0 && (got < 0 || (unsigned long)got != g_expected_size)) {
             dlog("download: size mismatch for %s (got %ld, expected %lu) — discarding",
                  g_final_path, got, g_expected_size);
@@ -198,7 +172,16 @@ DownloadState download_poll(float *out_progress) {
             return g_state;
         }
 
-        rename(g_part_path, g_final_path);
+        /* The size check above is skipped when the listing gave no size, so
+         * rename is the only thing left that can notice the .part went away
+         * (card pulled, "clear unfinished downloads" run mid-transfer). Its
+         * result used to be discarded, which reported and logged a download
+         * that produced no file as complete. */
+        if (rename(g_part_path, g_final_path) != 0) {
+            dlog("download: rename %s -> %s failed (errno %d)", g_part_path, g_final_path, errno);
+            g_state = DOWNLOAD_FAILED;
+            return g_state;
+        }
 
         dlog("download: complete, saved to %s", g_final_path);
 
@@ -243,7 +226,7 @@ DownloadState download_poll(float *out_progress) {
     }
 
     if (out_progress) {
-        long sz = file_size(g_part_path);
+        long sz = util_file_size(g_part_path);
         *out_progress = (g_expected_size > 0 && sz > 0)
                              ? (float)((double)sz / (double)g_expected_size)
                              : 0.0f;
@@ -284,7 +267,7 @@ int download_cleanup_parts(const char *roms_root, unsigned long long *freed_byte
             if (!ends_with(e->d_name, ".part")) continue;
             char path[700];
             snprintf(path, sizeof(path), "%s/%s", sysdir, e->d_name);
-            long sz = file_size(path);
+            long sz = util_file_size(path);
             if (remove(path) == 0) {
                 removed++;
                 if (sz > 0) freed += (unsigned long long)sz;
@@ -302,5 +285,5 @@ int download_cleanup_parts(const char *roms_root, unsigned long long *freed_byte
 bool download_file_exists(const char *dest_dir, const char *dest_filename) {
     char path[600];
     snprintf(path, sizeof(path), "%s/%s", dest_dir, dest_filename);
-    return file_size(path) > 0;
+    return util_file_size(path) > 0;
 }

@@ -8,6 +8,7 @@
 #include "net_login.h"
 #include "ui_login.h"
 #include "download.h"
+#include "util.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -18,30 +19,15 @@ enum { ROW_LANGUAGE, ROW_SOUND, ROW_SOURCES, ROW_ACCOUNT, ROW_CLEANUP, ROW_COUNT
 
 static lv_obj_t *g_rows[ROW_COUNT];
 static lv_obj_t *g_labels[ROW_COUNT];
-static lv_obj_t *g_status;
 static lv_obj_t *g_container;
 static lv_group_t *g_group;
 static ui_settings_back_cb_t g_on_back;
 static int g_selected;
-static uint32_t g_status_tick;
-static bool g_status_showing;
 static bool g_rebuild_pending; /* language changed: rebuild outside the event handler */
 static bool g_back_pending;    /* leaving: same, see key_event_cb */
 static bool g_sources_pending;  /* opening the source editor: also deferred */
 
-static void format_size(unsigned long long bytes, char *out, size_t outsz) {
-    if (bytes >= 1024ULL * 1024 * 1024) snprintf(out, outsz, "%.1f GB", bytes / (1024.0 * 1024 * 1024));
-    else if (bytes >= 1024ULL * 1024) snprintf(out, outsz, "%.1f MB", bytes / (1024.0 * 1024));
-    else if (bytes >= 1024) snprintf(out, outsz, "%.1f KB", bytes / 1024.0);
-    else snprintf(out, outsz, "%llu B", bytes);
-}
 
-static void set_status(const char *text) {
-    lv_label_set_text(g_status, text);
-    lv_obj_remove_flag(g_status, LV_OBJ_FLAG_HIDDEN);
-    g_status_showing = true;
-    g_status_tick = lv_tick_get();
-}
 
 static void refresh_rows(void) {
     const Settings *s = settings_get();
@@ -103,7 +89,7 @@ static void activate(void) {
         case ROW_ACCOUNT:
             if (auth_available()) {
                 net_login_sign_out();
-                set_status(T("settings_signed_out_done"));
+                ui_chrome_toast(T("settings_signed_out_done"), STATUS_MS);
                 refresh_rows();
             } else {
                 ui_login_open(g_group);
@@ -117,10 +103,10 @@ static void activate(void) {
                 snprintf(msg, sizeof(msg), "%s", T("settings_cleanup_none"));
             } else {
                 char sz[32];
-                format_size(freed, sz, sizeof(sz));
+                util_format_size(freed, sz, sizeof(sz));
                 snprintf(msg, sizeof(msg), T("settings_cleanup_done_fmt"), n, sz);
             }
-            set_status(msg);
+            ui_chrome_toast(msg, STATUS_MS);
             break;
         }
         default:
@@ -150,7 +136,6 @@ static void key_event_cb(lv_event_t *e) {
 void ui_settings_build(lv_group_t *group, ui_settings_back_cb_t on_back) {
     g_group = group;
     g_on_back = on_back;
-    g_status_showing = false;
     g_rebuild_pending = false;
     g_back_pending = false;
     g_sources_pending = false;
@@ -181,11 +166,6 @@ void ui_settings_build(lv_group_t *group, ui_settings_back_cb_t on_back) {
         g_labels[i] = label;
     }
 
-    g_status = lv_label_create(screen);
-    lv_obj_set_style_text_color(g_status, lv_color_hex(0x2ecc40), 0);
-    lv_obj_set_style_text_font(g_status, &lv_font_ui_16, 0);
-    lv_obj_align(g_status, LV_ALIGN_BOTTOM_LEFT, 8, -UI_CHROME_FOOTER_H - 2);
-    lv_obj_add_flag(g_status, LV_OBJ_FLAG_HIDDEN);
 
     refresh_rows();
 
@@ -199,7 +179,22 @@ bool ui_settings_wants_sources(void) {
     return true;
 }
 
+/* The login overlay closes itself on a timer and tells nobody, so the account
+ * row underneath kept its pre-login text. That is not just cosmetic: the row
+ * still read "Not signed in [Sign in]" while activate() reads auth_available()
+ * live, so a second A — the obvious thing to press when the screen says you
+ * are not signed in — took the sign-out branch and destroyed the session that
+ * had just been created. Re-read the state when the overlay goes away. */
+static bool g_login_was_open;
+
 void ui_settings_tick(void) {
+    if (ui_login_is_open()) {
+        g_login_was_open = true;
+    } else if (g_login_was_open) {
+        g_login_was_open = false;
+        refresh_rows();
+    }
+
     if (g_back_pending) {
         g_back_pending = false;
         if (g_on_back) g_on_back();
@@ -213,9 +208,5 @@ void ui_settings_tick(void) {
         g_selected = keep;
         refresh_rows();
         return;
-    }
-    if (g_status_showing && lv_tick_elaps(g_status_tick) >= STATUS_MS) {
-        g_status_showing = false;
-        lv_obj_add_flag(g_status, LV_OBJ_FLAG_HIDDEN);
     }
 }

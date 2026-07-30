@@ -69,7 +69,7 @@ static int link_strength(const char *proc_path, const char *iface) {
          * as the kernel happened to order them the other way — a false
          * offline while actually connected. */
         const char *name = line;
-        while (*name == ' ' || *name == '\t') name++;
+        name += strspn(name, " \t");
         if ((size_t)(colon - name) != ilen || strncmp(name, iface, ilen) != 0) continue;
 
         unsigned status;

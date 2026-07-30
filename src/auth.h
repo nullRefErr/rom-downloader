@@ -34,7 +34,11 @@
 #define CURL_BIN_PATH "/mnt/SDCARD/.tmp_update/bin/curl"
 
 /* Reads the cookie file and prepares the curl config. Call once at startup. */
-void auth_init(void);
+/* Returns false when no usable session was established — no cookie file, an
+ * empty one, no CA bundle, or the curl config could not be written. Callers
+ * that just want cookies picked up if present can ignore it; the sign-in flow
+ * must not, or it reports "Signed in" for a session that isn't there. */
+bool auth_init(void);
 
 /* True when a usable cookie file AND the CA bundle are both present. */
 bool auth_available(void);

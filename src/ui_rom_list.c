@@ -1,4 +1,6 @@
 #include "ui_rom_list.h"
+#include "ui_kb.h"
+#include "ui_overlay.h"
 #include "i18n.h"
 #include "ui_style.h"
 #include "ui_chrome.h"
@@ -9,7 +11,9 @@
 #include "favorites.h"
 #include "filter.h"
 #include "sources.h"
+#include "util.h"
 #include "ui_login.h"
+#include "auth.h"
 #include <stdio.h>
 #include <stdbool.h>
 #include <string.h>
@@ -76,24 +80,17 @@ static bool g_filter_active;
 static char g_query[64];         /* current search text ("" = none) */
 static RegionFilter g_region;    /* REGION_ALL = no region constraint */
 static bool g_fav_only;          /* show only favourited roms */
-static lv_obj_t *g_search_overlay;
-static lv_group_t *g_search_group;
+static UiOverlay g_search;
 static lv_obj_t *g_kb;
 static uint32_t g_kb_last_sel = LV_BUTTONMATRIX_BUTTON_NONE;
 
 /* download confirmation overlay, opened on A before a download actually
  * starts — see open_download_confirm() below */
-static bool g_confirm_close_pending;
-static bool g_confirm_close_apply;
-static lv_obj_t *g_confirm_overlay;
-static lv_group_t *g_confirm_group;
+static UiOverlay g_confirm;
 static void start_download(void);
 
 /* region/favourites filter overlay (Select button) — see open_filter() */
-static bool g_filter_close_pending;
-static bool g_filter_close_apply;
-static lv_obj_t *g_filter_overlay;
-static lv_group_t *g_filter_group;
+static UiOverlay g_filter;
 static lv_obj_t *g_filter_region_label;
 static lv_obj_t *g_filter_fav_label;
 static int g_filter_sel;             /* 0 = region row, 1 = favourites row */
@@ -111,18 +108,6 @@ static void apply_filters(void);
  * ourselves (lv_buttonmatrix_set_button_ctrl), not derived from object
  * focus state, so it's rendered unconditionally by lv_buttonmatrix's own
  * draw code — a more direct, verifiable mechanism. */
-static void update_keyboard_highlight(void) {
-    if (!g_kb) return;
-    uint32_t sel = lv_buttonmatrix_get_selected_button(g_kb);
-    if (sel == g_kb_last_sel) return;
-    if (g_kb_last_sel != LV_BUTTONMATRIX_BUTTON_NONE) {
-        lv_buttonmatrix_clear_button_ctrl(g_kb, g_kb_last_sel, LV_BUTTONMATRIX_CTRL_CHECKED);
-    }
-    if (sel != LV_BUTTONMATRIX_BUTTON_NONE) {
-        lv_buttonmatrix_set_button_ctrl(g_kb, sel, LV_BUTTONMATRIX_CTRL_CHECKED);
-    }
-    g_kb_last_sel = sel;
-}
 
 static void update_marquee(void) {
     if (g_marquee_pending_row < 0) return;
@@ -145,13 +130,6 @@ static const char *display_name(const char *full_name) {
 static int eff_count(void) { return g_filter_active ? g_filter_count : g_list.count; }
 static int eff_data_idx(int pos) { return g_filter_active ? g_filter_idx[pos] : pos; }
 
-static void format_size(unsigned long bytes, char *out, size_t outsz) {
-    if (bytes >= 1024UL * 1024 * 1024) snprintf(out, outsz, "%.1f GB", bytes / (1024.0 * 1024 * 1024));
-    else if (bytes >= 1024UL * 1024) snprintf(out, outsz, "%.1f MB", bytes / (1024.0 * 1024));
-    else if (bytes >= 1024) snprintf(out, outsz, "%.1f KB", bytes / 1024.0);
-    else if (bytes > 0) snprintf(out, outsz, "%lu B", bytes);
-    else out[0] = '\0';
-}
 
 static void redraw(void) {
     int count = eff_count();
@@ -195,7 +173,9 @@ static void redraw(void) {
     if (count > 0) {
         int idx = eff_data_idx(g_selected);
         char sizebuf[32];
-        format_size(g_list.items[idx].size, sizebuf, sizeof(sizebuf));
+        /* an unknown size shows nothing rather than "0 B" */
+        if (g_list.items[idx].size) util_format_size(g_list.items[idx].size, sizebuf, sizeof(sizebuf));
+        else sizebuf[0] = '\0';
         lv_label_set_text(g_info_label, sizebuf);
 
         if (download_file_exists(g_roms_dir, display_name(g_list.items[idx].name))) {
@@ -300,52 +280,36 @@ static void apply_filters(void) {
  * closing search with B. Deferred instead: the handler only sets a flag,
  * actual cleanup happens in ui_rom_list_tick(), safely outside any event
  * dispatch. */
-static bool g_search_close_pending;
-static bool g_search_close_apply;
 
 static void keyboard_event_cb(lv_event_t *e) {
     lv_event_code_t code = lv_event_get_code(e);
     if (code == LV_EVENT_READY) {
-        g_search_close_pending = true;
-        g_search_close_apply = true;
+        ui_overlay_request_close(&g_search, true);
     } else if (code == LV_EVENT_CANCEL) {
-        g_search_close_pending = true;
-        g_search_close_apply = false;
+        ui_overlay_request_close(&g_search, false);
     }
 }
 
 static void process_pending_search_close(void) {
-    if (!g_search_close_pending) return;
-    g_search_close_pending = false;
+    bool apply;
+    if (!ui_overlay_take_close(&g_search, &apply)) return;
 
-    if (g_search_close_apply && g_search_overlay) {
-        lv_obj_t *ta = lv_obj_get_child(g_search_overlay, 0);
+    /* read the query out while the overlay is still alive */
+    if (apply && g_search.obj) {
+        lv_obj_t *ta = lv_obj_get_child(g_search.obj, 0);
         snprintf(g_query, sizeof(g_query), "%s", lv_textarea_get_text(ta));
         apply_filters();
     }
-    lvgl_glue_set_active_group(g_group);
     g_kb = NULL;
-    if (g_search_overlay) {
-        lv_obj_delete(g_search_overlay);
-        g_search_overlay = NULL;
-    }
-    if (g_search_group) {
-        lv_group_delete(g_search_group);
-        g_search_group = NULL;
-    }
+    ui_overlay_close(&g_search, g_group);
 }
 
 void ui_rom_list_open_search(void) {
-    if (g_search_overlay || g_confirm_overlay || g_filter_overlay) return;
+    if (g_search.obj || g_confirm.obj || g_filter.obj) return;
 
-    g_search_overlay = lv_obj_create(lv_screen_active());
-    lv_obj_set_size(g_search_overlay, LV_PCT(100), LV_PCT(100));
-    lv_obj_set_style_bg_color(g_search_overlay, lv_color_hex(0x000000), 0);
-    lv_obj_set_style_bg_opa(g_search_overlay, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(g_search_overlay, 0, 0);
-    lv_obj_remove_flag(g_search_overlay, LV_OBJ_FLAG_SCROLLABLE);
+    ui_overlay_open(&g_search);
 
-    lv_obj_t *ta = lv_textarea_create(g_search_overlay); /* child 0 — see process_pending_search_close() */
+    lv_obj_t *ta = lv_textarea_create(g_search.obj); /* child 0 — see process_pending_search_close() */
     lv_textarea_set_one_line(ta, true);
     lv_textarea_set_text(ta, ""); /* always start empty, regardless of any previous search */
     lv_textarea_set_placeholder_text(ta, T("search_placeholder"));
@@ -356,39 +320,19 @@ void ui_rom_list_open_search(void) {
     lv_obj_set_style_text_color(ta, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_border_color(ta, lv_color_hex(0x555555), 0);
 
-    g_kb = lv_keyboard_create(g_search_overlay);
+    g_kb = ui_kb_create(g_search.obj, ta, keyboard_event_cb);
     g_kb_last_sel = LV_BUTTONMATRIX_BUTTON_NONE;
-    lv_keyboard_set_textarea(g_kb, ta);
-    lv_obj_add_event_cb(g_kb, keyboard_event_cb, LV_EVENT_READY, NULL);
-    lv_obj_add_event_cb(g_kb, keyboard_event_cb, LV_EVENT_CANCEL, NULL);
-    /* the default per-button FOCUSED/FOCUS_KEY style wasn't visibly
-     * rendering on-device — see update_keyboard_highlight() for why we use
-     * LV_STATE_CHECKED (a directly-controlled ctrl bit) instead. */
-    lv_obj_set_style_bg_color(g_kb, lv_color_hex(0x000000), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(g_kb, LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_set_style_bg_color(g_kb, lv_color_hex(0x222222), LV_PART_ITEMS);
-    lv_obj_set_style_bg_opa(g_kb, LV_OPA_COVER, LV_PART_ITEMS);
-    lv_obj_set_style_text_color(g_kb, lv_color_hex(0xffffff), LV_PART_ITEMS);
-    /* Focused key uses a vivid green fill, NOT white — the default keyboard
-     * theme already renders the special keys (Enter/Space/Caps/Backspace) in
-     * a light colour, so a white highlight was indistinguishable from them
-     * and you couldn't tell which key was selected while typing (reported via
-     * Reddit). Green matches the app accent and collides with nothing. */
-    lv_obj_set_style_bg_color(g_kb, lv_color_hex(0x2ecc40), LV_PART_ITEMS | LV_STATE_CHECKED);
-    lv_obj_set_style_text_color(g_kb, lv_color_hex(0x000000), LV_PART_ITEMS | LV_STATE_CHECKED);
 
-    g_search_group = lv_group_create();
-    lv_group_add_obj(g_search_group, g_kb);
-    lvgl_glue_set_active_group(g_search_group);
+    ui_overlay_focus(&g_search, g_kb);
 }
 
 bool ui_rom_list_search_is_open(void) {
-    return g_search_overlay != NULL;
+    return g_search.obj != NULL;
 }
 
 void ui_rom_list_search_backspace(void) {
-    if (!g_search_overlay) return;
-    lv_obj_t *ta = lv_obj_get_child(g_search_overlay, 0);
+    if (!g_search.obj) return;
+    lv_obj_t *ta = lv_obj_get_child(g_search.obj, 0);
     lv_textarea_delete_char(ta);
 }
 
@@ -397,46 +341,30 @@ void ui_rom_list_search_backspace(void) {
 static void confirm_key_cb(lv_event_t *e) {
     uint32_t key = lv_event_get_key(e);
     if (key == LV_KEY_ENTER) {
-        g_confirm_close_pending = true;
-        g_confirm_close_apply = true;
+        ui_overlay_request_close(&g_confirm, true);
     } else if (key == LV_KEY_ESC) {
-        g_confirm_close_pending = true;
-        g_confirm_close_apply = false;
+        ui_overlay_request_close(&g_confirm, false);
     }
 }
 
 static void process_pending_confirm_close(void) {
-    if (!g_confirm_close_pending) return;
-    g_confirm_close_pending = false;
-    bool apply = g_confirm_close_apply;
+    bool apply;
+    if (!ui_overlay_take_close(&g_confirm, &apply)) return;
 
-    lvgl_glue_set_active_group(g_group);
-    if (g_confirm_overlay) {
-        lv_obj_delete(g_confirm_overlay);
-        g_confirm_overlay = NULL;
-    }
-    if (g_confirm_group) {
-        lv_group_delete(g_confirm_group);
-        g_confirm_group = NULL;
-    }
+    ui_overlay_close(&g_confirm, g_group);
     if (apply) start_download();
 }
 
 static void open_download_confirm(void) {
-    if (g_confirm_overlay) return;
+    if (g_confirm.obj) return;
     int count = eff_count();
     if (count == 0) return;
     int idx = eff_data_idx(g_selected);
 
-    g_confirm_overlay = lv_obj_create(lv_screen_active());
-    lv_obj_set_size(g_confirm_overlay, LV_PCT(100), LV_PCT(100));
-    lv_obj_set_style_bg_color(g_confirm_overlay, lv_color_hex(0x000000), 0);
-    lv_obj_set_style_bg_opa(g_confirm_overlay, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(g_confirm_overlay, 0, 0);
-    lv_obj_remove_flag(g_confirm_overlay, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_event_cb(g_confirm_overlay, confirm_key_cb, LV_EVENT_KEY, NULL);
+    ui_overlay_open(&g_confirm);
+    lv_obj_add_event_cb(g_confirm.obj, confirm_key_cb, LV_EVENT_KEY, NULL);
 
-    lv_obj_t *box = lv_obj_create(g_confirm_overlay);
+    lv_obj_t *box = lv_obj_create(g_confirm.obj);
     lv_obj_set_size(box, LV_PCT(90), 160);
     lv_obj_center(box);
     lv_obj_set_style_bg_color(box, lv_color_hex(0x111111), 0);
@@ -445,7 +373,8 @@ static void open_download_confirm(void) {
     lv_obj_remove_flag(box, LV_OBJ_FLAG_SCROLLABLE);
 
     char sizebuf[32];
-    format_size(g_list.items[idx].size, sizebuf, sizeof(sizebuf));
+    if (g_list.items[idx].size) util_format_size(g_list.items[idx].size, sizebuf, sizeof(sizebuf));
+    else sizebuf[0] = '\0';
     char msg[220];
     snprintf(msg, sizeof(msg), T("confirm_download"),
              display_name(g_list.items[idx].name), sizebuf);
@@ -462,9 +391,7 @@ static void open_download_confirm(void) {
     lv_obj_set_style_text_color(hint, lv_color_hex(0x888888), 0);
     lv_obj_align(hint, LV_ALIGN_BOTTOM_MID, 0, -8);
 
-    g_confirm_group = lv_group_create();
-    lv_group_add_obj(g_confirm_group, g_confirm_overlay);
-    lvgl_glue_set_active_group(g_confirm_group);
+    ui_overlay_focus(&g_confirm, g_confirm.obj);
 }
 
 static void start_download(void) {
@@ -517,28 +444,17 @@ static void filter_key_cb(lv_event_t *e) {
         }
         render_filter_overlay();
     } else if (key == LV_KEY_ENTER) {
-        g_filter_close_pending = true;
-        g_filter_close_apply = true;
+        ui_overlay_request_close(&g_filter, true);
     } else if (key == LV_KEY_ESC) {
-        g_filter_close_pending = true;
-        g_filter_close_apply = false;
+        ui_overlay_request_close(&g_filter, false);
     }
 }
 
 static void process_pending_filter_close(void) {
-    if (!g_filter_close_pending) return;
-    g_filter_close_pending = false;
-    bool apply = g_filter_close_apply;
+    bool apply;
+    if (!ui_overlay_take_close(&g_filter, &apply)) return;
 
-    lvgl_glue_set_active_group(g_group);
-    if (g_filter_overlay) {
-        lv_obj_delete(g_filter_overlay);
-        g_filter_overlay = NULL;
-    }
-    if (g_filter_group) {
-        lv_group_delete(g_filter_group);
-        g_filter_group = NULL;
-    }
+    ui_overlay_close(&g_filter, g_group);
     g_filter_region_label = NULL;
     g_filter_fav_label = NULL;
 
@@ -550,21 +466,16 @@ static void process_pending_filter_close(void) {
 }
 
 void ui_rom_list_open_filter(void) {
-    if (g_search_overlay || g_confirm_overlay || g_filter_overlay) return;
+    if (g_search.obj || g_confirm.obj || g_filter.obj) return;
 
     g_filter_tmp_region = g_region;
     g_filter_tmp_fav = g_fav_only;
     g_filter_sel = 0;
 
-    g_filter_overlay = lv_obj_create(lv_screen_active());
-    lv_obj_set_size(g_filter_overlay, LV_PCT(100), LV_PCT(100));
-    lv_obj_set_style_bg_color(g_filter_overlay, lv_color_hex(0x000000), 0);
-    lv_obj_set_style_bg_opa(g_filter_overlay, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(g_filter_overlay, 0, 0);
-    lv_obj_remove_flag(g_filter_overlay, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_event_cb(g_filter_overlay, filter_key_cb, LV_EVENT_KEY, NULL);
+    ui_overlay_open(&g_filter);
+    lv_obj_add_event_cb(g_filter.obj, filter_key_cb, LV_EVENT_KEY, NULL);
 
-    lv_obj_t *box = lv_obj_create(g_filter_overlay);
+    lv_obj_t *box = lv_obj_create(g_filter.obj);
     lv_obj_set_size(box, LV_PCT(90), 180);
     lv_obj_center(box);
     lv_obj_set_style_bg_color(box, lv_color_hex(0x111111), 0);
@@ -593,13 +504,11 @@ void ui_rom_list_open_filter(void) {
 
     render_filter_overlay();
 
-    g_filter_group = lv_group_create();
-    lv_group_add_obj(g_filter_group, g_filter_overlay);
-    lvgl_glue_set_active_group(g_filter_group);
+    ui_overlay_focus(&g_filter, g_filter.obj);
 }
 
 void ui_rom_list_toggle_favorite(void) {
-    if (g_search_overlay || g_confirm_overlay || g_filter_overlay) return;
+    if (g_search.obj || g_confirm.obj || g_filter.obj) return;
     int count = eff_count();
     if (count == 0) return;
     int idx = eff_data_idx(g_selected);
@@ -677,14 +586,9 @@ void ui_rom_list_build(lv_group_t *group, const EmuEntry *emu, RomList list,
     g_query[0] = '\0';
     g_region = REGION_ALL;
     g_fav_only = false;
-    g_search_overlay = NULL;
-    g_search_group = NULL;
-    g_confirm_overlay = NULL;
-    g_confirm_group = NULL;
-    g_confirm_close_pending = false;
-    g_filter_overlay = NULL;
-    g_filter_group = NULL;
-    g_filter_close_pending = false;
+    g_search = (UiOverlay){0};
+    g_confirm = (UiOverlay){0};
+    g_filter = (UiOverlay){0};
     g_filter_region_label = NULL;
     g_filter_fav_label = NULL;
     g_marquee_row = -1;
@@ -840,11 +744,35 @@ static void update_download(void) {
     }
 }
 
+/* Signing in from the restricted-source wall (LV_KEY_ENTER below) fixed the
+ * account but not the screen: the overlay closes on its own timer and the
+ * list is never refetched, so it still reads "Needs an archive.org account"
+ * and the user has to guess that backing out and re-entering works. Ask main
+ * to reload instead — same wants_* handshake ui_settings uses for sources,
+ * and it keeps the rebuild out of an event handler. */
+static bool g_login_was_open;
+static bool g_reload_wanted;
+
+bool ui_rom_list_wants_reload(void) {
+    bool w = g_reload_wanted;
+    g_reload_wanted = false;
+    return w;
+}
+
+const EmuEntry *ui_rom_list_emu(void) { return g_emu; }
+
 void ui_rom_list_tick(void) {
+    if (ui_login_is_open()) {
+        g_login_was_open = true;
+    } else if (g_login_was_open) {
+        g_login_was_open = false;
+        if (g_list.restricted && auth_available()) g_reload_wanted = true;
+    }
+
     process_pending_search_close();
     process_pending_confirm_close();
     process_pending_filter_close();
-    update_keyboard_highlight();
+    ui_kb_update_highlight(g_kb, &g_kb_last_sel);
     update_marquee();
     update_download();
 
@@ -860,38 +788,14 @@ void ui_rom_list_tick(void) {
 
 void ui_rom_list_destroy(void) {
     g_thumb_pending_idx = -1;
-    g_search_close_pending = false;
-    g_confirm_close_pending = false;
-    g_filter_close_pending = false;
     g_kb = NULL;
     g_kb_last_sel = LV_BUTTONMATRIX_BUTTON_NONE;
-    /* safe to delete synchronously here — called from main.c's screen
-     * teardown, not from inside an LVGL event callback like the search
-     * overlay's own close path has to be. */
-    if (g_search_overlay) {
-        lv_obj_delete(g_search_overlay);
-        g_search_overlay = NULL;
-    }
-    if (g_search_group) {
-        lv_group_delete(g_search_group);
-        g_search_group = NULL;
-    }
-    if (g_confirm_overlay) {
-        lv_obj_delete(g_confirm_overlay);
-        g_confirm_overlay = NULL;
-    }
-    if (g_confirm_group) {
-        lv_group_delete(g_confirm_group);
-        g_confirm_group = NULL;
-    }
-    if (g_filter_overlay) {
-        lv_obj_delete(g_filter_overlay);
-        g_filter_overlay = NULL;
-    }
-    if (g_filter_group) {
-        lv_group_delete(g_filter_group);
-        g_filter_group = NULL;
-    }
+    /* safe to close synchronously here — called from main.c's screen
+     * teardown, not from inside an LVGL event callback like the overlays'
+     * own close paths have to be. */
+    ui_overlay_close(&g_search, g_group);
+    ui_overlay_close(&g_confirm, g_group);
+    ui_overlay_close(&g_filter, g_group);
     g_filter_region_label = NULL;
     g_filter_fav_label = NULL;
     net_archive_free(&g_list);

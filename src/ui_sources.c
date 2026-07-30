@@ -1,4 +1,6 @@
 #include "ui_sources.h"
+#include "ui_kb.h"
+#include "ui_overlay.h"
 #include "ui_chrome.h"
 #include "ui_style.h"
 #include "lvgl_glue.h"
@@ -12,47 +14,23 @@
 
 static lv_obj_t *g_rows[ROWS_VISIBLE];
 static lv_obj_t *g_labels[ROWS_VISIBLE];
-static lv_obj_t *g_status;
 static lv_obj_t *g_container;
 static lv_group_t *g_group;
 static ui_sources_back_cb_t g_on_back;
 static int g_selected;
 static int g_window_start;
-static uint32_t g_status_tick;
-static bool g_status_showing;
 static bool g_back_pending;
 
 /* Edit overlay: a single field plus the on-screen keyboard. Torn down from
  * the tick, never from inside its own event handler — the pattern this
  * codebase settled on after mid-dispatch teardown froze the app. */
-static lv_obj_t *g_edit_overlay;
-static lv_group_t *g_edit_group;
+static UiOverlay g_edit;
 static lv_obj_t *g_edit_ta;
 static lv_obj_t *g_edit_kb;
 static int g_edit_index = -1;
-static bool g_edit_close_pending;
-static bool g_edit_close_apply;
 static uint32_t g_kb_last_sel = LV_BUTTONMATRIX_BUTTON_NONE;
 
-static void set_status(const char *text) {
-    lv_label_set_text(g_status, text);
-    lv_obj_remove_flag(g_status, LV_OBJ_FLAG_HIDDEN);
-    g_status_showing = true;
-    g_status_tick = lv_tick_get();
-}
 
-static void update_kb_highlight(void) {
-    if (!g_edit_kb) return;
-    uint32_t sel = lv_buttonmatrix_get_selected_button(g_edit_kb);
-    if (sel == g_kb_last_sel) return;
-    if (g_kb_last_sel != LV_BUTTONMATRIX_BUTTON_NONE) {
-        lv_buttonmatrix_clear_button_ctrl(g_edit_kb, g_kb_last_sel, LV_BUTTONMATRIX_CTRL_CHECKED);
-    }
-    if (sel != LV_BUTTONMATRIX_BUTTON_NONE) {
-        lv_buttonmatrix_set_button_ctrl(g_edit_kb, sel, LV_BUTTONMATRIX_CTRL_CHECKED);
-    }
-    g_kb_last_sel = sel;
-}
 
 static void redraw(void) {
     int count = sources_count();
@@ -81,35 +59,28 @@ static void redraw(void) {
 static void edit_kb_event_cb(lv_event_t *e) {
     lv_event_code_t code = lv_event_get_code(e);
     if (code == LV_EVENT_READY) {
-        g_edit_close_pending = true;
-        g_edit_close_apply = true;
+        ui_overlay_request_close(&g_edit, true);
     } else if (code == LV_EVENT_CANCEL) {
-        g_edit_close_pending = true;
-        g_edit_close_apply = false;
+        ui_overlay_request_close(&g_edit, false);
     }
 }
 
 static void open_edit(int index) {
-    if (g_edit_overlay) return;
+    if (g_edit.obj) return;
     const EmuEntry *e = sources_get(index);
     if (!e) return;
 
     g_edit_index = index;
     g_kb_last_sel = LV_BUTTONMATRIX_BUTTON_NONE;
 
-    g_edit_overlay = lv_obj_create(lv_screen_active());
-    lv_obj_set_size(g_edit_overlay, LV_PCT(100), LV_PCT(100));
-    lv_obj_set_style_bg_color(g_edit_overlay, lv_color_hex(0x000000), 0);
-    lv_obj_set_style_bg_opa(g_edit_overlay, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(g_edit_overlay, 0, 0);
-    lv_obj_remove_flag(g_edit_overlay, LV_OBJ_FLAG_SCROLLABLE);
+    ui_overlay_open(&g_edit);
 
-    lv_obj_t *title = lv_label_create(g_edit_overlay);
+    lv_obj_t *title = lv_label_create(g_edit.obj);
     lv_label_set_text(title, e->label);
     lv_obj_set_style_text_color(title, lv_color_hex(0xffffff), 0);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 2);
 
-    g_edit_ta = lv_textarea_create(g_edit_overlay);
+    g_edit_ta = lv_textarea_create(g_edit.obj);
     lv_textarea_set_one_line(g_edit_ta, true);
     lv_textarea_set_text(g_edit_ta, sources_text(index));
     lv_obj_set_size(g_edit_ta, LV_PCT(96), 34);
@@ -117,7 +88,7 @@ static void open_edit(int index) {
     lv_obj_set_style_bg_color(g_edit_ta, lv_color_hex(0x111111), 0);
     lv_obj_set_style_text_color(g_edit_ta, lv_color_hex(0xffffff), 0);
 
-    lv_obj_t *hint = lv_label_create(g_edit_overlay);
+    lv_obj_t *hint = lv_label_create(g_edit.obj);
     lv_label_set_text(hint, T("sources_edit_hint"));
     lv_obj_set_style_text_font(hint, &lv_font_ui_14, 0);
     lv_obj_set_style_text_color(hint, lv_color_hex(0x888888), 0);
@@ -126,49 +97,33 @@ static void open_edit(int index) {
     lv_obj_set_style_text_align(hint, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_align(hint, LV_ALIGN_TOP_MID, 0, 68);
 
-    g_edit_kb = lv_keyboard_create(g_edit_overlay);
-    lv_keyboard_set_textarea(g_edit_kb, g_edit_ta);
-    lv_obj_add_event_cb(g_edit_kb, edit_kb_event_cb, LV_EVENT_READY, NULL);
-    lv_obj_add_event_cb(g_edit_kb, edit_kb_event_cb, LV_EVENT_CANCEL, NULL);
-    lv_obj_set_style_bg_color(g_edit_kb, lv_color_hex(0x000000), LV_PART_MAIN);
-    lv_obj_set_style_bg_color(g_edit_kb, lv_color_hex(0x222222), LV_PART_ITEMS);
-    lv_obj_set_style_text_color(g_edit_kb, lv_color_hex(0xffffff), LV_PART_ITEMS);
-    lv_obj_set_style_bg_color(g_edit_kb, lv_color_hex(0x2ecc40), LV_PART_ITEMS | LV_STATE_CHECKED);
-    lv_obj_set_style_text_color(g_edit_kb, lv_color_hex(0x000000), LV_PART_ITEMS | LV_STATE_CHECKED);
+    g_edit_kb = ui_kb_create(g_edit.obj, g_edit_ta, edit_kb_event_cb);
+    g_kb_last_sel = LV_BUTTONMATRIX_BUTTON_NONE;
 
-    g_edit_group = lv_group_create();
-    lv_group_add_obj(g_edit_group, g_edit_kb);
-    lvgl_glue_set_active_group(g_edit_group);
+    ui_overlay_focus(&g_edit, g_edit_kb);
 }
 
 static void process_edit_close(void) {
-    if (!g_edit_close_pending) return;
-    g_edit_close_pending = false;
+    bool apply;
+    if (!ui_overlay_take_close(&g_edit, &apply)) return;
 
-    if (g_edit_close_apply && g_edit_ta && g_edit_index >= 0) {
+    /* the textarea lives inside the overlay — read it before tearing down */
+    if (apply && g_edit_ta && g_edit_index >= 0) {
         const char *text = lv_textarea_get_text(g_edit_ta);
         if (text && *text) {
             sources_set(g_edit_index, text);
-            set_status(T("sources_saved"));
+            ui_chrome_toast(T("sources_saved"), STATUS_MS);
         }
     }
 
-    lvgl_glue_set_active_group(g_group);
     g_edit_kb = NULL;
     g_edit_ta = NULL;
-    if (g_edit_overlay) {
-        lv_obj_delete(g_edit_overlay);
-        g_edit_overlay = NULL;
-    }
-    if (g_edit_group) {
-        lv_group_delete(g_edit_group);
-        g_edit_group = NULL;
-    }
+    ui_overlay_close(&g_edit, g_group);
     g_edit_index = -1;
     redraw();
 }
 
-bool ui_sources_editing(void) { return g_edit_overlay != NULL; }
+bool ui_sources_editing(void) { return g_edit.obj != NULL; }
 
 void ui_sources_backspace(void) {
     if (g_edit_ta) lv_textarea_delete_char(g_edit_ta);
@@ -179,7 +134,7 @@ void ui_sources_clear_field(void) {
 }
 
 void ui_sources_toggle_available(void) {
-    if (g_edit_overlay) return;
+    if (g_edit.obj) return;
     const EmuEntry *e = sources_get(g_selected);
     if (!e) return;
     sources_set_available(g_selected, !e->available);
@@ -187,12 +142,12 @@ void ui_sources_toggle_available(void) {
 }
 
 void ui_sources_reset_defaults(void) {
-    if (g_edit_overlay) return;
+    if (g_edit.obj) return;
     sources_reset();
     g_selected = 0;
     g_window_start = 0;
     redraw();
-    set_status(T("sources_reset_done"));
+    ui_chrome_toast(T("sources_reset_done"), STATUS_MS);
 }
 
 static void key_event_cb(lv_event_t *e) {
@@ -221,11 +176,8 @@ static void key_event_cb(lv_event_t *e) {
 void ui_sources_build(lv_group_t *group, ui_sources_back_cb_t on_back) {
     g_group = group;
     g_on_back = on_back;
-    g_status_showing = false;
     g_back_pending = false;
-    g_edit_overlay = NULL;
-    g_edit_group = NULL;
-    g_edit_close_pending = false;
+    g_edit = (UiOverlay){0};
     g_edit_index = -1;
     if (g_selected >= sources_count()) g_selected = 0;
 
@@ -256,11 +208,6 @@ void ui_sources_build(lv_group_t *group, ui_sources_back_cb_t on_back) {
         g_labels[i] = label;
     }
 
-    g_status = lv_label_create(screen);
-    lv_obj_set_style_text_color(g_status, lv_color_hex(0x2ecc40), 0);
-    lv_obj_set_style_text_font(g_status, &lv_font_ui_16, 0);
-    lv_obj_align(g_status, LV_ALIGN_BOTTOM_LEFT, 8, -UI_CHROME_FOOTER_H - 2);
-    lv_obj_add_flag(g_status, LV_OBJ_FLAG_HIDDEN);
 
     redraw();
 
@@ -270,15 +217,11 @@ void ui_sources_build(lv_group_t *group, ui_sources_back_cb_t on_back) {
 
 void ui_sources_tick(void) {
     process_edit_close();
-    update_kb_highlight();
+    ui_kb_update_highlight(g_edit_kb, &g_kb_last_sel);
 
     if (g_back_pending) {
         g_back_pending = false;
         if (g_on_back) g_on_back();
         return;
-    }
-    if (g_status_showing && lv_tick_elaps(g_status_tick) >= STATUS_MS) {
-        g_status_showing = false;
-        lv_obj_add_flag(g_status, LV_OBJ_FLAG_HIDDEN);
     }
 }

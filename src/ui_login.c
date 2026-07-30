@@ -1,4 +1,6 @@
 #include "ui_login.h"
+#include "ui_kb.h"
+#include "ui_overlay.h"
 #include "i18n.h"
 #include "ui_chrome.h"
 #include "lvgl_glue.h"
@@ -12,8 +14,7 @@
 
 typedef enum { ST_EMAIL, ST_PASSWORD, ST_SUBMIT, ST_RESULT, ST_CLOSING } LoginStep;
 
-static lv_obj_t *g_overlay;
-static lv_group_t *g_group;
+static UiOverlay g_ov;
 static lv_group_t *g_restore_group;
 static lv_obj_t *g_email_ta;
 static lv_obj_t *g_pass_ta;
@@ -28,18 +29,6 @@ static uint32_t g_kb_last_sel = LV_BUTTONMATRIX_BUTTON_NONE;
  * styling doesn't render reliably on this device, so drive it from a ctrl
  * bit we set ourselves. Green, matching the search keyboard, because the
  * theme already paints the special keys a light shade. */
-static void update_kb_highlight(void) {
-    if (!g_kb) return;
-    uint32_t sel = lv_buttonmatrix_get_selected_button(g_kb);
-    if (sel == g_kb_last_sel) return;
-    if (g_kb_last_sel != LV_BUTTONMATRIX_BUTTON_NONE) {
-        lv_buttonmatrix_clear_button_ctrl(g_kb, g_kb_last_sel, LV_BUTTONMATRIX_CTRL_CHECKED);
-    }
-    if (sel != LV_BUTTONMATRIX_BUTTON_NONE) {
-        lv_buttonmatrix_set_button_ctrl(g_kb, sel, LV_BUTTONMATRIX_CTRL_CHECKED);
-    }
-    g_kb_last_sel = sel;
-}
 
 static void set_status(const char *text, uint32_t color) {
     lv_label_set_text(g_status, text);
@@ -66,24 +55,19 @@ static void kb_event_cb(lv_event_t *e) {
 }
 
 void ui_login_open(lv_group_t *restore_group) {
-    if (g_overlay) return;
+    if (g_ov.obj) return;
     g_restore_group = restore_group;
     g_step = ST_EMAIL;
     g_kb_last_sel = LV_BUTTONMATRIX_BUTTON_NONE;
 
-    g_overlay = lv_obj_create(lv_screen_active());
-    lv_obj_set_size(g_overlay, LV_PCT(100), LV_PCT(100));
-    lv_obj_set_style_bg_color(g_overlay, lv_color_hex(0x000000), 0);
-    lv_obj_set_style_bg_opa(g_overlay, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(g_overlay, 0, 0);
-    lv_obj_remove_flag(g_overlay, LV_OBJ_FLAG_SCROLLABLE);
+    ui_overlay_open(&g_ov);
 
-    lv_obj_t *title = lv_label_create(g_overlay);
+    lv_obj_t *title = lv_label_create(g_ov.obj);
     lv_label_set_text(title, T("login_title"));
     lv_obj_set_style_text_color(title, lv_color_hex(0xffffff), 0);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 2);
 
-    g_email_ta = lv_textarea_create(g_overlay);
+    g_email_ta = lv_textarea_create(g_ov.obj);
     lv_textarea_set_one_line(g_email_ta, true);
     lv_textarea_set_placeholder_text(g_email_ta, T("login_email"));
     lv_obj_set_size(g_email_ta, LV_PCT(94), 34);
@@ -91,7 +75,7 @@ void ui_login_open(lv_group_t *restore_group) {
     lv_obj_set_style_bg_color(g_email_ta, lv_color_hex(0x111111), 0);
     lv_obj_set_style_text_color(g_email_ta, lv_color_hex(0xffffff), 0);
 
-    g_pass_ta = lv_textarea_create(g_overlay);
+    g_pass_ta = lv_textarea_create(g_ov.obj);
     lv_textarea_set_one_line(g_pass_ta, true);
     lv_textarea_set_password_mode(g_pass_ta, true); /* never show the password on screen */
     lv_textarea_set_placeholder_text(g_pass_ta, T("login_password"));
@@ -100,7 +84,7 @@ void ui_login_open(lv_group_t *restore_group) {
     lv_obj_set_style_bg_color(g_pass_ta, lv_color_hex(0x111111), 0);
     lv_obj_set_style_text_color(g_pass_ta, lv_color_hex(0xffffff), 0);
 
-    g_status = lv_label_create(g_overlay);
+    g_status = lv_label_create(g_ov.obj);
     lv_obj_set_style_text_font(g_status, &lv_font_ui_14, 0);
     lv_obj_set_width(g_status, LV_PCT(94));
     lv_label_set_long_mode(g_status, LV_LABEL_LONG_MODE_WRAP);
@@ -122,52 +106,35 @@ void ui_login_open(lv_group_t *restore_group) {
         }
     }
 
-    g_kb = lv_keyboard_create(g_overlay);
-    lv_keyboard_set_textarea(g_kb, g_email_ta);
-    lv_obj_add_event_cb(g_kb, kb_event_cb, LV_EVENT_READY, NULL);
-    lv_obj_add_event_cb(g_kb, kb_event_cb, LV_EVENT_CANCEL, NULL);
-    lv_obj_set_style_bg_color(g_kb, lv_color_hex(0x000000), LV_PART_MAIN);
-    lv_obj_set_style_bg_color(g_kb, lv_color_hex(0x222222), LV_PART_ITEMS);
-    lv_obj_set_style_text_color(g_kb, lv_color_hex(0xffffff), LV_PART_ITEMS);
-    lv_obj_set_style_bg_color(g_kb, lv_color_hex(0x2ecc40), LV_PART_ITEMS | LV_STATE_CHECKED);
-    lv_obj_set_style_text_color(g_kb, lv_color_hex(0x000000), LV_PART_ITEMS | LV_STATE_CHECKED);
+    g_kb = ui_kb_create(g_ov.obj, g_email_ta, kb_event_cb);
+    g_kb_last_sel = LV_BUTTONMATRIX_BUTTON_NONE;
 
-    g_group = lv_group_create();
-    lv_group_add_obj(g_group, g_kb);
-    lvgl_glue_set_active_group(g_group);
+    ui_overlay_focus(&g_ov, g_kb);
 }
 
 bool ui_login_is_open(void) {
-    return g_overlay != NULL;
+    return g_ov.obj != NULL;
 }
 
 void ui_login_clear_field(void) {
-    if (!g_overlay) return;
+    if (!g_ov.obj) return;
     lv_textarea_set_text(g_step == ST_EMAIL ? g_email_ta : g_pass_ta, "");
 }
 
 void ui_login_backspace(void) {
-    if (!g_overlay) return;
+    if (!g_ov.obj) return;
     lv_textarea_delete_char(g_step == ST_EMAIL ? g_email_ta : g_pass_ta);
 }
 
 static void close_now(void) {
-    lvgl_glue_set_active_group(g_restore_group);
     g_kb = NULL;
-    if (g_overlay) {
-        lv_obj_delete(g_overlay);
-        g_overlay = NULL;
-    }
-    if (g_group) {
-        lv_group_delete(g_group);
-        g_group = NULL;
-    }
     g_email_ta = g_pass_ta = g_status = NULL;
+    ui_overlay_close(&g_ov, g_restore_group);
 }
 
 void ui_login_tick(void) {
-    if (!g_overlay) return;
-    update_kb_highlight();
+    if (!g_ov.obj) return;
+    ui_kb_update_highlight(g_kb, &g_kb_last_sel);
 
     if (g_step == ST_SUBMIT) {
         /* net_login blocks on curl for up to 30s — paint the notice first,

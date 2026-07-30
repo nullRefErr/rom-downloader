@@ -17,4 +17,15 @@ void ui_chrome_build(const char *title, const char *hints);
  * has been built yet on the active screen. */
 void ui_chrome_refresh_status(void);
 
+/* Transient confirmation above the footer ("Signed out", "Defaults restored").
+ * Built hidden by ui_chrome_build() and shown for `hide_after_ms`, or until
+ * the next screen build if that is 0. Byte-identical copies of this — label,
+ * placement, colour, timer and expiry check — lived in ui_settings.c and
+ * ui_sources.c; the login overlay deliberately keeps its own, because that one
+ * is a wrapping, recolourable hint inside an overlay that must not self-hide. */
+void ui_chrome_toast(const char *text, uint32_t hide_after_ms);
+
+/* Expires a shown toast. Called once from the main loop; no-op when idle. */
+void ui_chrome_toast_tick(void);
+
 #endif

@@ -1,4 +1,5 @@
 #include "i18n.h"
+#include "util.h"
 #include "cJSON.h"
 #include "i18n_fallback.h"
 #include <stdio.h>
@@ -25,29 +26,9 @@ static cJSON *g_root;     /* whole file, kept alive: the returned strings point 
 static cJSON *g_active;   /* selected language object */
 static cJSON *g_fallback; /* English */
 
-static char *read_file(const char *path) {
-    FILE *f = fopen(path, "rb");
-    if (!f) return NULL;
-    fseek(f, 0, SEEK_END);
-    long sz = ftell(f);
-    fseek(f, 0, SEEK_SET);
-    if (sz <= 0) {
-        fclose(f);
-        return NULL;
-    }
-    char *buf = malloc((size_t)sz + 1);
-    if (!buf) {
-        fclose(f);
-        return NULL;
-    }
-    size_t got = fread(buf, 1, (size_t)sz, f);
-    fclose(f);
-    buf[got] = '\0';
-    return buf;
-}
 
 void i18n_load(const char *lang) {
-    char *json = read_file(LANG_FILE);
+    char *json = util_read_file(LANG_FILE, 0);
     if (!json) return; /* no file: T() falls through to returning keys */
     g_root = cJSON_Parse(json);
     free(json);

@@ -190,7 +190,7 @@ int main(int argc, char **argv) {
     settings_load();
     sources_load();
     i18n_load(settings_get()->lang);
-    auth_init();   /* optional archive.org cookies, see auth.h */
+    (void)auth_init();   /* optional archive.org cookies, see auth.h */
     queue_reset(); /* once at startup — the queue outlives individual screens */
     logmsg("lvgl init OK");
 
@@ -259,7 +259,7 @@ int main(int argc, char **argv) {
                      * X could be pressed (reported directly). Menu is now
                      * unclaimed by the app entirely. */
                     if (kc == SDLK_RETURN) running = 0;
-                    if (kc == SDLK_LALT && g_screen == SCREEN_ROM_LIST) { /* Y */
+                    if (kc == SDLK_LALT) { /* Y */
                         /* Y opens search; once search is open, reaching the
                          * on-screen keyboard's own tiny backspace key by
                          * D-pad felt too tedious (reported directly) — Y
@@ -268,7 +268,7 @@ int main(int argc, char **argv) {
                         else if (g_screen == SCREEN_SOURCES) ui_sources_reset_defaults();
                         else if (ui_login_is_open()) ui_login_backspace();
                         else if (ui_rom_list_search_is_open()) ui_rom_list_search_backspace();
-                        else ui_rom_list_open_search();
+                        else if (g_screen == SCREEN_ROM_LIST) ui_rom_list_open_search();
                     }
                     if (kc == SDLK_LSHIFT) { /* X */
                         if (ui_sources_editing()) ui_sources_clear_field();
@@ -305,7 +305,11 @@ int main(int argc, char **argv) {
          * anyway, but gating it here keeps that guarantee explicit. */
         if (g_screen != SCREEN_UPDATE) queue_tick();
         ui_login_tick();
-        if (g_screen == SCREEN_ROM_LIST) ui_rom_list_tick();
+        ui_chrome_toast_tick();
+        if (g_screen == SCREEN_ROM_LIST) {
+            ui_rom_list_tick();
+            if (ui_rom_list_wants_reload()) on_emu_selected(ui_rom_list_emu());
+        }
         if (g_screen == SCREEN_SETTINGS) {
             ui_settings_tick();
             if (ui_settings_wants_sources()) show_sources();

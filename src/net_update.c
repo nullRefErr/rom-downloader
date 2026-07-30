@@ -1,6 +1,7 @@
 #include "net_update.h"
 #include "version.h"
 #include "cJSON.h"
+#include "util.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -8,44 +9,13 @@
 #define API_URL "https://api.github.com/repos/nullRefErr/rom-downloader/releases/latest"
 #define ASSET_NAME "romdownloader"
 
-/* Same fetch-to-string helper shape as net_archive.c's fetch_url() — each
- * file in this app keeps its own small copy rather than sharing one, same
- * convention thumbnail.c already follows. -T 5 caps how long a bad/absent
- * network can stall app startup (this runs once on every launch); -U is
- * required or GitHub answers with a 403. */
 static char *fetch_url(const char *url) {
-    char cmd[512];
-    snprintf(cmd, sizeof(cmd), "wget -q -T 5 -O - -U 'rom-downloader' '%s' 2>/dev/null", url);
-    FILE *p = popen(cmd, "r");
-    if (!p) return NULL;
-
-    size_t cap = 65536, len = 0;
-    char *buf = malloc(cap);
-    if (!buf) {
-        pclose(p);
-        return NULL;
-    }
-    size_t n;
-    while ((n = fread(buf + len, 1, cap - len, p)) > 0) {
-        len += n;
-        if (len == cap) {
-            cap *= 2;
-            char *nbuf = realloc(buf, cap);
-            if (!nbuf) {
-                free(buf);
-                pclose(p);
-                return NULL;
-            }
-            buf = nbuf;
-        }
-    }
-    int status = pclose(p);
-    if (status != 0 || len == 0) {
-        free(buf);
-        return NULL;
-    }
-    buf[len] = '\0';
-    return buf;
+    char cmd[1100], url_q[900];
+    util_shell_quote(url, url_q, sizeof(url_q));
+    /* -T 5 caps how long a bad or absent network can stall startup (this
+     * runs on every launch); -U is required or GitHub answers 403. */
+    snprintf(cmd, sizeof(cmd), "wget -q -T 5 -O - -U 'rom-downloader' %s 2>/dev/null", url_q);
+    return util_run_capture(cmd, NULL);
 }
 
 /* Numeric X.Y.Z compare, not string inequality — a naive "!=" would flag

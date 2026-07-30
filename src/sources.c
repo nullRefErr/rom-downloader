@@ -1,4 +1,5 @@
 #include "sources.h"
+#include "util.h"
 #include "cJSON.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -21,31 +22,11 @@ static void load_defaults(void) {
     for (int i = 0; i < g_count; i++) g_sources[i] = EMU_DEFAULTS[i];
 }
 
-static char *read_file(const char *path) {
-    FILE *f = fopen(path, "rb");
-    if (!f) return NULL;
-    fseek(f, 0, SEEK_END);
-    long sz = ftell(f);
-    fseek(f, 0, SEEK_SET);
-    if (sz <= 0 || sz > 256 * 1024) { /* a source list this big isn't ours */
-        fclose(f);
-        return NULL;
-    }
-    char *buf = malloc((size_t)sz + 1);
-    if (!buf) {
-        fclose(f);
-        return NULL;
-    }
-    size_t got = fread(buf, 1, (size_t)sz, f);
-    fclose(f);
-    buf[got] = '\0';
-    return buf;
-}
 
 void sources_load(void) {
     load_defaults();
 
-    char *json = read_file(SOURCES_FILE);
+    char *json = util_read_file(SOURCES_FILE, 256 * 1024);
     if (!json) return; /* no file — defaults stand, which is the normal case */
 
     cJSON *root = cJSON_Parse(json);
@@ -89,22 +70,47 @@ void sources_load(void) {
     cJSON_Delete(root);
 }
 
+/* Built with cJSON rather than printf: these values are typed by the user on
+ * the source editor's keyboard, so a quote or backslash in one would produce
+ * JSON that fails to parse on the next start — and sources_load() falls back
+ * to the defaults on a parse error, so the edit vanished silently rather than
+ * failing visibly. Verified: setting a source to weird"name and reloading
+ * gave back the default. */
 void sources_save(void) {
-    FILE *f = fopen(SOURCES_FILE, "w");
-    if (!f) return;
-    fprintf(f, "{\n  \"sources\": [\n");
+    cJSON *root = cJSON_CreateObject();
+    if (!root) return;
+    cJSON *arr = cJSON_AddArrayToObject(root, "sources");
+    if (!arr) {
+        cJSON_Delete(root);
+        return;
+    }
+
     for (int i = 0; i < g_count; i++) {
         const EmuEntry *e = &g_sources[i];
-        fprintf(f,
-                "    { \"code\": \"%s\", \"label\": \"%s\", \"archive_id\": \"%s\", "
-                "\"url\": \"%s\", \"base\": \"%s\", \"ext\": \"%s\", "
-                "\"thumb_repo\": \"%s\", \"available\": %s }%s\n",
-                e->code, e->label, e->archive_id, e->url, e->base, e->ext,
-                e->thumb_repo, e->available ? "true" : "false",
-                i + 1 < g_count ? "," : "");
+        cJSON *o = cJSON_CreateObject();
+        if (!o) break;
+        cJSON_AddStringToObject(o, "code", e->code);
+        cJSON_AddStringToObject(o, "label", e->label);
+        cJSON_AddStringToObject(o, "archive_id", e->archive_id);
+        cJSON_AddStringToObject(o, "url", e->url);
+        cJSON_AddStringToObject(o, "base", e->base);
+        cJSON_AddStringToObject(o, "ext", e->ext);
+        cJSON_AddStringToObject(o, "thumb_repo", e->thumb_repo);
+        cJSON_AddBoolToObject(o, "available", e->available ? 1 : 0);
+        cJSON_AddItemToArray(arr, o);
     }
-    fprintf(f, "  ]\n}\n");
-    fclose(f);
+
+    char *text = cJSON_Print(root);
+    cJSON_Delete(root);
+    if (!text) return;
+
+    FILE *f = fopen(SOURCES_FILE, "w");
+    if (f) {
+        fputs(text, f);
+        fputc('\n', f);
+        fclose(f);
+    }
+    free(text);
 }
 
 int sources_count(void) { return g_count; }
@@ -129,6 +135,9 @@ void sources_set(int i, const char *text) {
     if (strstr(text, "://")) {
         snprintf(e->url, sizeof(e->url), "%s", text);
         e->archive_id[0] = '\0';
+        /* base is invisible in the editor, so a stale one silently keeps
+         * downloading from the old host after the list url is repointed. */
+        e->base[0] = '\0';
     } else {
         snprintf(e->archive_id, sizeof(e->archive_id), "%s", text);
         e->url[0] = '\0';

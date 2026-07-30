@@ -25,6 +25,11 @@ void ui_rom_list_build(lv_group_t *group, const EmuEntry *emu, RomList list,
  * progress UI (harmless no-op when this screen isn't active). */
 void ui_rom_list_tick(void);
 
+/* True once after a sign-in from the restricted-source wall succeeded: the
+ * caller should refetch the list for ui_rom_list_emu() and rebuild. */
+bool ui_rom_list_wants_reload(void);
+const EmuEntry *ui_rom_list_emu(void);
+
 /* Opens the search keyboard overlay (only valid while this screen is the
  * active one — caller, e.g. main.c, is responsible for only calling this
  * when the rom list is actually showing). */

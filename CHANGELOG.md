@@ -1,5 +1,28 @@
 # Changelog
 
+## v1.7.0
+
+- **ROM sources are now yours to change.** Settings has a Rom sources screen: point any system at a different archive.org item or at your own URL, turn sources on and off, and restore the built-in list if you break something. Sources live in `sources.json` on the card, so you can also edit them on a PC.
+
+### Fixed
+
+- Signing in from Settings left the account row showing "Not signed in". Pressing A again — the obvious thing to do when the screen says that — signed you straight back out. The row now updates when the sign-in window closes.
+- Signing in from a source that needs an account left the list still saying an account was needed. It reloads now.
+- "Y: Defaults" on the Rom sources screen did nothing at all; the key was locked to the rom list. Restoring the built-in sources had no way to be reached from the device.
+- Box art was cached by rom name only, so systems sharing a title — Sonic exists on Genesis, Master System and Game Gear — showed each other's covers, permanently.
+- A rom with no box art re-downloaded the missing image every single time you scrolled past it, freezing the list for a few seconds each pass.
+- A download that finished but failed to save reported "Downloaded" anyway.
+- A stalled connection could freeze the app for up to fifteen minutes with no way out but the power button. Loading a rom list now gives up after ten seconds.
+- A source URL containing an apostrophe jammed downloads permanently at 0%.
+- Editing a source's URL kept sending downloads to the old address.
+- "Signed in" was shown even when the session could not be saved to the card, after which every download quietly ran signed out.
+- Hand-editing `settings.json` could make both your language and sound settings silently revert to defaults.
+- When a rom list failed to load, every cause showed the same message. The real reason is now written to `log.txt`.
+
+### Under the hood
+
+Shared helpers replaced a pile of near-identical copies — one file reader instead of three, one URL encoder instead of three, one keyboard, and one overlay lifecycle behind the five pop-up screens. About 280 lines lighter with no change in behaviour.
+
 ## v1.6.1
 
 - Fixed the button hints at the bottom of the system list keeping the previous language after changing it in settings. Leaving settings tore the screen down from inside its own key handler, so the old labels survived the rebuild.

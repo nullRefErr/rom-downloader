@@ -1,4 +1,5 @@
 #include "settings.h"
+#include "util.h"
 #include "cJSON.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -8,37 +9,29 @@
 
 static Settings g_settings = { "en", true };
 
-static char *read_file(const char *path) {
-    FILE *f = fopen(path, "rb");
-    if (!f) return NULL;
-    fseek(f, 0, SEEK_END);
-    long sz = ftell(f);
-    fseek(f, 0, SEEK_SET);
-    if (sz <= 0 || sz > 64 * 1024) { /* a settings file this big is not ours */
-        fclose(f);
-        return NULL;
-    }
-    char *buf = malloc((size_t)sz + 1);
-    if (!buf) {
-        fclose(f);
-        return NULL;
-    }
-    size_t got = fread(buf, 1, (size_t)sz, f);
-    fclose(f);
-    buf[got] = '\0';
-    return buf;
-}
 
+/* Built with cJSON rather than printf for the same reason sources_save() is:
+ * lang is only ever a code from the picker today, but a hand-edited
+ * settings.json round-trips straight back through here, and one unescaped
+ * quote produces a file that settings_load() then fails to parse — at which
+ * point it keeps the defaults and BOTH preferences silently revert. */
 static void save(void) {
+    cJSON *root = cJSON_CreateObject();
+    if (!root) return;
+    cJSON_AddStringToObject(root, "lang", g_settings.lang);
+    cJSON_AddBoolToObject(root, "sound", g_settings.sound);
+
+    char *text = cJSON_Print(root);
+    cJSON_Delete(root);
+    if (!text) return;
+
     FILE *f = fopen(SETTINGS_FILE, "w");
-    if (!f) return;
-    fprintf(f, "{\n  \"lang\": \"%s\",\n  \"sound\": %s\n}\n",
-            g_settings.lang, g_settings.sound ? "true" : "false");
-    fclose(f);
+    if (f) { fputs(text, f); fputc('\n', f); fclose(f); }
+    free(text);
 }
 
 void settings_load(void) {
-    char *json = read_file(SETTINGS_FILE);
+    char *json = util_read_file(SETTINGS_FILE, 64 * 1024);
     if (!json) return; /* first run — defaults stand */
 
     cJSON *root = cJSON_Parse(json);

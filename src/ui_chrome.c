@@ -7,6 +7,10 @@
  * one). ui_chrome_refresh_status() guards against it being stale/NULL. */
 static lv_obj_t *g_status_label;
 
+static lv_obj_t *g_toast;
+static uint32_t g_toast_tick;
+static uint32_t g_toast_ms;
+
 void ui_chrome_build(const char *title, const char *hints) {
     lv_obj_t *screen = lv_screen_active();
     lv_obj_set_style_bg_color(screen, lv_color_hex(0x000000), 0);
@@ -26,6 +30,13 @@ void ui_chrome_build(const char *title, const char *hints) {
     lv_obj_set_style_text_color(g_status_label, lv_color_hex(0xaaaaaa), 0);
     lv_obj_align(g_status_label, LV_ALIGN_TOP_RIGHT, -8, 6);
     ui_chrome_refresh_status();
+
+    g_toast = lv_label_create(screen);
+    lv_obj_set_style_text_color(g_toast, lv_color_hex(0x2ecc40), 0);
+    lv_obj_set_style_text_font(g_toast, &lv_font_ui_16, 0);
+    lv_obj_align(g_toast, LV_ALIGN_BOTTOM_LEFT, 8, -UI_CHROME_FOOTER_H - 2);
+    lv_obj_add_flag(g_toast, LV_OBJ_FLAG_HIDDEN);
+    g_toast_ms = 0;
 
     lv_obj_t *footer = lv_label_create(screen);
     lv_label_set_text(footer, hints);
@@ -61,4 +72,19 @@ void ui_chrome_refresh_status(void) {
     }
     lv_label_set_text(g_status_label, text);
     lv_obj_align(g_status_label, LV_ALIGN_TOP_RIGHT, -8, 6); /* re-align, width changed */
+}
+
+void ui_chrome_toast(const char *text, uint32_t hide_after_ms) {
+    if (!g_toast) return;
+    lv_label_set_text(g_toast, text);
+    lv_obj_remove_flag(g_toast, LV_OBJ_FLAG_HIDDEN);
+    g_toast_tick = lv_tick_get();
+    g_toast_ms = hide_after_ms;
+}
+
+void ui_chrome_toast_tick(void) {
+    if (!g_toast || !g_toast_ms) return;
+    if (lv_tick_elaps(g_toast_tick) < g_toast_ms) return;
+    g_toast_ms = 0;
+    lv_obj_add_flag(g_toast, LV_OBJ_FLAG_HIDDEN);
 }

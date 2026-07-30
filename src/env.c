@@ -14,14 +14,14 @@ static void strip_eol(char *s) {
  * the value, because this file is hand-edited. Returns the value or NULL. */
 static const char *match_key(char *line, const char *key) {
     char *p = line;
-    while (*p == ' ' || *p == '\t') p++;
+    p += strspn(p, " \t");
     size_t klen = strlen(key);
     if (strncmp(p, key, klen) != 0) return NULL;
     p += klen;
-    while (*p == ' ' || *p == '\t') p++;
+    p += strspn(p, " \t");
     if (*p != '=') return NULL;
     p++;
-    while (*p == ' ' || *p == '\t') p++;
+    p += strspn(p, " \t");
     if (*p == '"' || *p == '\'') {
         char q = *p++;
         char *end = strrchr(p, q);
@@ -45,7 +45,7 @@ bool env_load(char *email, size_t email_sz, char *password, size_t password_sz) 
     char line[512];
     while (fgets(line, sizeof(line), f)) {
         char *p = line;
-        while (*p == ' ' || *p == '\t') p++;
+        p += strspn(p, " \t");
         if (*p == '#') continue; /* comment */
         strip_eol(line);
 
